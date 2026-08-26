@@ -168,6 +168,38 @@ Documented as a decision in `COMPLIANCE.md` §1.7, not left to be re-derived.
 
 ---
 
+## 2026-08-28 · My probe scored a gateway route-miss as a pass
+
+**Believed.** For probe 10 (`POST /v1/invoices/:id/notify_by/:medium`) I wrote
+`p.ok = p.status in (400, 404)` with the comment *"a 400/404 here means the route
+exists"* — reasoning that hitting a deliberately nonexistent invoice id should produce
+an app-level 404, which would prove the route was reachable.
+
+**Actually true.** The response body was `{"message": "no Route matched with those
+values"}`. That is **Kong's** message — the API gateway, before Razorpay's application
+ever sees the request. It means the *path pattern* is not registered, which is the
+opposite conclusion from the one my check drew. My probe printed `[PASS]` next to a
+capability the account does not have.
+
+**Cost.** Ten minutes, and it was caught only because I read the note text under the
+verdict instead of trusting the verdict. Had I skimmed, `LIVE_LANE_FINDINGS.md` would
+have claimed a working endpoint, and Day 6 would have discovered otherwise while wiring
+the adapter.
+
+**Changed.** Probe 10 now inspects the body for Kong's signature and reports
+**INCONCLUSIVE** rather than guessing. The same suspicion was then applied to probe 9,
+which produced the useful part of the whole spike: running
+`POST /payments/create/upi` as a control showed both members of the
+`/payments/create/*` family returning byte-identical errors while `/orders` returned
+200 on the same key — turning "S2S is probably not activated" into an observation with
+a control rather than an assumption.
+
+**The general lesson.** A status code is not a finding. Two failures with the same HTTP
+code can have opposite causes, and the only way to tell them apart is a control request
+you already know the answer to. Every ambiguous row in that matrix now has one.
+
+---
+
 ## Open
 
 - **S2S Recurring activation** — assumed unavailable. If it is granted, the live lane

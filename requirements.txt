@@ -1,0 +1,34 @@
+# Winback — pinned dependency set.
+# Python 3.14 on macOS arm64. Every pin below has a verified cp314/universal wheel.
+# Do not float these mid-build: pandas 3.x and scikit-learn 1.9 both carry breaking
+# changes from the versions most tutorials assume (see docs/WHAT_BROKE.md).
+
+# --- data & ML ---
+numpy==2.5.2
+pandas==3.0.5
+scipy==1.16.3
+scikit-learn==1.9.0          # NOTE: CalibratedClassifierCV(cv='prefit') REMOVED -> sklearn.frozen.FrozenEstimator
+xgboost==3.4.1
+matplotlib==3.10.7
+Faker==40.37.0
+
+# --- agent ---
+claude-agent-sdk==0.2.144
+anthropic==0.75.0
+
+# --- persistence ---
+psycopg[binary]==3.2.12
+SQLAlchemy==2.0.44
+
+# --- api ---
+fastapi==0.141.1
+uvicorn[standard]==0.40.0
+pydantic==2.13.2
+python-dotenv==1.2.1
+httpx==0.28.1
+
+# --- dev ---
+pytest==9.0.1
+pytest-cov==7.0.0
+pytest-asyncio==1.3.0
+ruff==0.15.1

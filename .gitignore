@@ -1,0 +1,24 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+.env
+.env.local
+*.key
+
+# generated data & model artifacts are committed deliberately (see docs/DATA.md);
+# only scratch output is ignored
+ml/artifacts/scratch/
+data/scratch/
+*.log
+
+# node
+dashboard/node_modules/
+dashboard/.next/
+dashboard/out/
+
+.DS_Store

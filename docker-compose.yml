@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: winback-db
+    environment:
+      POSTGRES_DB: winback
+      POSTGRES_USER: winback_owner
+      POSTGRES_PASSWORD: winback_dev
+    ports:
+      - "55432:5432"
+    volumes:
+      - winback_pgdata:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U winback_owner -d winback"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  winback_pgdata:

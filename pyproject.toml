@@ -1,0 +1,36 @@
+[project]
+name = "winback"
+version = "0.1.0"
+description = "Compliance-gated subscription revenue recovery — Razorpay AI Buildathon 2026, Track 03"
+requires-python = ">=3.13"
+
+[tool.pytest.ini_options]
+# rootdir-relative imports: `from core.db import ...` resolves without installing.
+pythonpath = ["."]
+testpaths = ["core", "compliance", "sim", "ml", "eval", "agent"]
+addopts = "-q --strict-markers"
+markers = [
+    "db: requires the Postgres container (docker compose up -d)",
+    "live: hits the real Razorpay test-mode API; skipped unless credentials are set",
+]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "S", "RUF"]
+ignore = [
+    "S101",  # assert is the point in a test suite, and a fine narrowing tool elsewhere
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*/tests/*" = ["S608"]  # test SQL is built from a parametrised table allow-list
+
+[tool.coverage.run]
+branch = true
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+show_missing = true

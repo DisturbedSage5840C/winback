@@ -218,6 +218,17 @@ def _rules_for(request: ActionRequest, now: datetime) -> list[RuleResult]:
                     metadata={"kind": str(request.kind)},
                 )
             ]
+        case _:
+            # Unreachable today, and deliberately loud rather than absent. Without
+            # this arm a new ActionKind falls through the match, returns None, and
+            # surfaces as a TypeError inside most_restrictive -- i.e. an ungoverned
+            # action kind reaching the money path, reported as a type bug. Whoever
+            # adds a kind must decide which rules govern it.
+            raise NotImplementedError(
+                f"guardrail: no rule set defined for ActionKind {request.kind!r}. "
+                "Every action kind must state which rules govern it; there is no "
+                "default, because the default would be 'none'."
+            )
 
 
 def evaluate(request: ActionRequest, *, now: datetime) -> GuardrailDecision:

@@ -248,3 +248,27 @@ def test_the_decision_is_frozen() -> None:
     decision: GuardrailDecision = evaluate(retry_request(), now=NOW)
     with pytest.raises((AttributeError, TypeError)):
         decision.verdict = Verdict.APPROVE  # type: ignore[misc]
+
+
+def test_an_unknown_action_kind_raises_rather_than_falling_through() -> None:
+    """The failure mode this guards is subtle and bad.
+
+    Without an explicit fallthrough arm, adding an ActionKind makes ``_rules_for``
+    return None, which surfaces as a TypeError inside ``most_restrictive`` -- an
+    *ungoverned action kind reaching the money path*, reported as a type bug. The
+    guardrail must fail in a way that names the actual problem.
+    """
+    request = retry_request()
+    object.__setattr__(request, "kind", "teleport")  # bypasses the frozen dataclass
+
+    with pytest.raises(NotImplementedError, match="no rule set defined"):
+        evaluate(request, now=NOW)
+
+
+def test_every_action_kind_has_a_rule_set() -> None:
+    """Walks the enum, so a member added without a rule set fails here immediately
+    rather than the first time an agent proposes it mid-batch."""
+    for kind in ActionKind:
+        decision = evaluate(retry_request(kind=kind), now=NOW)
+        assert decision.results, f"{kind} produced no rule results at all"
+        assert decision.authorizing_rule, f"{kind} produced an empty audit string"

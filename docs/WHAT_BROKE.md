@@ -200,6 +200,76 @@ you already know the answer to. Every ambiguous row in that matrix now has one.
 
 ---
 
+## 2026-08-28 · A boolean verdict field made three states impossible to tell apart
+
+**Believed.** After fixing the probe-10 verdict, the probe harness was correct. Each
+probe had `ok: bool`, set from `response.is_success`, and the run printed `7/10 passed`.
+
+**Actually true.** The boolean had been the *cause* of the probe-10 bug, not a
+bystander, and two more rows were still wrong because of it. `ok=False` was doing the
+work of three genuinely different claims:
+
+- probe 8 — **confirmed absent**, with an error message explaining why;
+- probe 9 — **confirmed absent, and that was the hypothesis**; the whole justification
+  for the two-adapter architecture, printed as if the build were broken;
+- probes 2 and 11 — **never ran at all**, and therefore entitled to claim nothing.
+
+Printing `FAIL` next to a probe that never executed is the same error as printing
+`PASS` next to a gateway route-miss: a verdict asserting more than the evidence
+supports. And `7/10 passed` quietly counted "I didn't try" as evidence of absence.
+
+**Cost.** Twenty minutes to restructure, and it paid for itself immediately — see the
+next entry, which only surfaced because closing the "skipped" probes stopped being
+optional.
+
+**Changed.** `Outcome` is now a five-member enum — `PASS`, `FAIL`, `EXPECTED`,
+`INCONC`, `SKIP` — and **`SKIP` is the default**, so a probe that never runs cannot be
+scored as anything else. The summary line reports every bucket rather than a single
+ratio, and a separate `usable` property (`outcome is PASS`) is what gates a capability
+into `LiveRazorpayAdapter`. All eleven probes now resolve: 9 PASS, 1 FAIL, 1 EXPECTED,
+zero inconclusive, zero skipped.
+
+The general lesson, and the reason this is a separate entry from the probe-10 one:
+fixing the wrong verdict was not the same as fixing the thing that produced it. A type
+too narrow to express the real answer will keep manufacturing wrong answers, one row at
+a time, until it is widened.
+
+---
+
+## 2026-08-28 · The tool the plan chose for dead mandates does not exist
+
+**Believed.** Build plan §1.1: `create_registration_link` is available on the **local**
+MCP server (it is one of four tools documented as remote-restricted), and is *"the
+correct real action for `BD_hard` mandate failures"* — when a mandate is revoked or the
+account is closed, ask the customer to re-register rather than burning legal attempts.
+
+**Actually true.** It is not in the image. Running `tools/list` against
+`docker run --rm -i razorpay/mcp` returns **41 tools, none of which mention
+registration, mandate, subscription, plan or recurring**. The local surface is orders,
+payments, payment links, QR codes, refunds, settlements, payouts and tokens. Three of
+the four documented remote-restricted tools are there — `create_refund`,
+`close_qr_code`, `create_instant_settlement` — and the fourth simply is not.
+
+**Cost.** None, because probe 2 was run on Day 2 instead of Day 6. Had it stayed
+"deferred", this would have surfaced while wiring the `BD_hard` branch of the adapter,
+on the day with the least slack in the schedule.
+
+**Changed.** The `BD_hard` action becomes a simulated re-registration carrying a real
+`plink_…`, which is what a merchant would actually send a customer with a dead mandate
+anyway. Recorded in `LIVE_LANE_FINDINGS.md` §05.
+
+Two things fell out of reading the tool list that were not what the probe was looking
+for, which is the argument for reading it rather than counting it:
+
+- **`payment_link_notify` is in the list**, and it is the one tool an agent could call
+  that would deliver a message to a real contact, around the consent gate. It goes on
+  the Day-6 `allowed_tools` denylist, named now rather than noticed later.
+- **`READ_ONLY=true` removes 16 of the 41 tools**, `payment_link_notify` among them, and
+  `TOOLSETS=orders` narrows to 5 (probe 11). That is a cheap second layer underneath
+  `can_use_tool` — defence in depth, not a replacement for the gate.
+
+---
+
 ## Open
 
 - **S2S Recurring activation** — assumed unavailable. If it is granted, the live lane

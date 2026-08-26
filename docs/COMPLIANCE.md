@@ -57,13 +57,32 @@ both MCC classes. A ₹20,000 SaaS debit escalates; a ₹20,000 SIP debit does n
 
 **Source.** TRAI **TCCCPR 2018** and the February 2025 amendments.
 
-**Rule.** No nudge on any channel without active consent. A customer inside the
-**90-day DND cooloff** is blocked outright. Transactional consent is valid for a
-**7-day** window from the triggering transaction.
+**Rule.** No nudge on any channel without active consent, *and* a live **7-day**
+transactional window opened by the failed debit itself. Separately, a customer who has
+withdrawn consent may not be **re-solicited** for **90 days**.
+
+**Two questions, two functions — this is the load-bearing detail.**
+
+| Function | Question | Governs |
+|---|---|---|
+| `check_nudge(...)` | May we message this customer *now*? | consent status + the 7-day window |
+| `may_request_reconsent(...)` | May we *ask* them to opt back in? | the 90-day cooloff |
+
+Collapsing these into one boolean is the mistake the module exists to prevent. A system
+that treats "cannot message" and "cannot ask again" as one state will either re-solicit
+someone who just opted out, or permanently write off a customer whose seven-day window
+merely lapsed. Ninety-one days after a withdrawal, a customer may be invited to
+re-consent — and still must not be nudged about an invoice until they actually say yes.
+
+Three deny reasons, not one, because the remedies differ: `consent_withdrawn`,
+`dnd_registered`, `transactional_window_expired` (plus `no_transactional_basis` when
+there is no triggering transaction at all). An audit trail that blurs them cannot answer
+*"why was this account never contacted?"*.
 
 **Must-block test.** A withdrawn-consent customer with ₹40,000 at risk receives
 nothing on any channel, and the audit row records `blocked` with the consent reason —
-the case where the money is large enough to make the temptation real.
+the case where the money is large enough to make the temptation real. `check_nudge`
+cannot see the amount; a signature test enforces that it never gains the ability to.
 
 > **Channel note.** Real SMS/WhatsApp sending requires DLT registration, so the
 > channel is simulated (`channel = "simulated_sms"`). The gate in front of it is not:
@@ -97,6 +116,51 @@ classification is worth more than any model output on top of it.
 
 **Must-block test.** Every `(code, source, step, reason)` tuple present in the dataset
 maps to exactly one class; an invented tuple raises rather than falling through.
+
+### 1.7 The composing guardrail — `compliance/guardrail.py`
+
+The six rules above each answer one legal question. `evaluate(request, now=…)` answers
+the operational one: *given a concrete proposed action, may it happen?* It does three
+things and deliberately nothing else.
+
+**It selects the applicable rules by action kind.**
+
+| Action | Rules that run |
+|---|---|
+| `RETRY` — present the mandate again | 1.1 cap · 1.2 window · 1.3 AFA · 1.5 notice · 1.6 retryability |
+| `NUDGE` — message or payment link | 1.4 consent only |
+| `ESCALATE` / `WRITE_OFF` | none — nothing moves, nothing is sent |
+
+Two omissions there are decisions, not oversights.
+
+*Consent does not gate a debit.* A mandate is a standing authorisation to debit; TRAI
+consent governs **messages**. Gating retries on marketing consent would forfeit recovery
+on every customer who ever opted out of SMS — a compliance error in the expensive
+direction, and one that would look responsible while costing real money.
+
+*The NPCI cap does not gate a message.* The 1+3 counts presentments of a mandate, not
+contacts. A customer past the cap is precisely the one who most needs to hear from us,
+via the payment-link path that spends no attempt at all.
+
+`ESCALATE` and `WRITE_OFF` are always permitted. A guardrail that could block the safe
+fallback would leave the agent with no legal move — which is how an autonomous system
+ends up choosing an illegal one.
+
+**It resolves conflicts by taking the most restrictive verdict.** A permissive rule can
+never launder a blocking one. Ties keep the earliest rule in a fixed evaluation order, so
+the surfaced reason does not drift as rules are added.
+
+**It produces the audit row.** Every individual `RuleResult` is preserved, not just the
+winner — *"blocked by the cap, and also mistimed"* is a different operational story from
+*"blocked by the cap alone"*, and only the full set can tell them apart.
+
+**What it does not take is a probability.** `evaluate` has exactly two parameters,
+`request` and `now`. `ActionRequest` has no field for a score, a confidence, an urgency
+or an override, and `now` is passed rather than read from the clock so a decision replays
+to the same verdict months later on a different machine. This is the structural claim of
+the project — the model chooses among **legal** actions and never argues about which
+actions are legal — and `test_the_guardrail_takes_no_probability_and_no_override`
+asserts it against the live signature, so the claim cannot quietly stop being true.
 
 ---
 

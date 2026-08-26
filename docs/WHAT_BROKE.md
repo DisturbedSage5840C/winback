@@ -121,6 +121,53 @@ message text, not merely on the exception type.
 
 ---
 
+## 2026-08-28 · My own tests violated the invariant I had just written
+
+**Believed.** The rule "every non-`APPROVE` verdict must name a `stop_reason`" was
+uncontroversial enough to enforce in `RuleResult.__post_init__` and move on.
+
+**Actually true.** Two of the eleven tests in `test_result.py` failed immediately —
+mine, constructing `REDIRECT_TO_WINDOW` and `ESCALATE_HUMAN` results with no
+`stop_reason`. I had internalised the invariant as being about denials.
+
+**Cost.** Ten minutes, and a decision: fix the tests or soften the rule.
+
+**Changed.** The tests. The invariant is right — a redirect and an escalation stop the
+action *as proposed* just as surely as a denial does, and an audit row that records a
+stop without a reason is the exact failure this project exists to avoid. The error
+message was rewritten to read correctly for all three blocking verdicts rather than
+sounding like it was about `DENY` alone.
+
+The general lesson, which is why this is logged rather than quietly fixed: when the
+first thing an invariant catches is your own code, that is evidence the invariant is
+load-bearing, not evidence it is too strict.
+
+---
+
+## 2026-08-28 · Nearly gated mandate retries on telecom consent
+
+**Believed.** While composing `guardrail.py`, the obvious shape was to run every rule
+on every action. More gates, more caution, better.
+
+**Actually true.** It would have been a compliance error in the expensive direction. A
+mandate is a standing authorisation to debit; TRAI's TCCCPR governs **messages**.
+Running `consent_gate` against a `RETRY` would have blocked recovery on every customer
+who ever opted out of marketing SMS — while looking, in a demo, maximally responsible.
+The mirror-image mistake was in the same commit: running the NPCI 1+3 cap against a
+`NUDGE`, which would silence exactly the customer who most needs a payment link, over a
+budget that counts mandate presentments and not contacts.
+
+**Cost.** None in wall-clock, because it was caught while writing the test names — the
+sentence "a withdrawn-consent customer cannot be retried" does not survive being said
+out loud. It would have cost a large fraction of measured recovery if it had shipped.
+
+**Changed.** `_rules_for` dispatches on `ActionKind`, and both directions are pinned by
+a test that asserts the *absence* of a rule name from `authorizing_rule`:
+`test_consent_does_not_gate_a_debit` and `test_the_retry_cap_does_not_gate_a_message`.
+Documented as a decision in `COMPLIANCE.md` §1.7, not left to be re-derived.
+
+---
+
 ## Open
 
 - **S2S Recurring activation** — assumed unavailable. If it is granted, the live lane

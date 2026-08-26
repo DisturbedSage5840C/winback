@@ -53,13 +53,13 @@ tool without an approval from it on record — enforced through the Agent SDK's
 
 ## 04 — Status
 
-Day 1 of 10 (26 Aug → 5 Sep 2026).
+Day 2 of 10 (26 Aug → 5 Sep 2026). **215 tests passing, 99% coverage on `compliance/`.**
 
 | | |
 |---|---|
 | ✅ | Pinned environment, Postgres in Docker, full schema |
 | ✅ | Append-only audit trail — enforced by grants *and* triggers, 20 passing tests |
-| ⬜ | Compliance guardrail modules (Day 2) |
+| ✅ | Six compliance rules + the composing guardrail — pure functions, written test-first |
 | ⬜ | World simulator + counterfactual oracle (Day 3) |
 | ⬜ | Calibrated model (Day 4) |
 | ⬜ | Four-arm paired evaluation (Day 5) |

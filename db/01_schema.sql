@@ -139,6 +139,13 @@ CREATE TABLE payment_attempts (
     -- so its outcome was never observed. Excluded from training; available to the
     -- counterfactual evaluator. This is what makes the training data honestly censored.
     observed         BOOLEAN NOT NULL DEFAULT TRUE,
+    -- Which legacy filter suppressed this retry. Recorded rather than inferred: the
+    -- two reasons are different kinds of bias and the calibration report splits on
+    -- them. 'legacy_value_floor' is a decision someone made; 'legacy_rail_excluded'
+    -- is a rail the retry job was never extended to.
+    censoring_reason TEXT CHECK (
+        censoring_reason IN ('legacy_value_floor', 'legacy_rail_excluded')
+    ),
 
     -- NULL/NULL => observational history. Set together for evaluation-arm attempts.
     run_id           TEXT,
@@ -150,6 +157,9 @@ CREATE TABLE payment_attempts (
     oracle_seed      TEXT NOT NULL,
 
     CHECK ((run_id IS NULL) = (arm IS NULL)),
+    -- An unobserved row without a reason is an unexplained hole in the training
+    -- data, and an observed row with one is a contradiction. Neither may exist.
+    CHECK (observed = (censoring_reason IS NULL)),
     UNIQUE (invoice_id, attempt_number, run_id)
 );
 
@@ -331,11 +341,18 @@ SELECT
     i.notice_sent_at,
     s.status                                        AS subscription_status,
     c.consent_status,
-    count(a.attempt_id) FILTER (WHERE a.run_id IS NULL) AS attempts_used,
-    4 - count(a.attempt_id) FILTER (WHERE a.run_id IS NULL) AS attempts_remaining,
-    max(a.attempted_at) FILTER (WHERE a.run_id IS NULL) AS last_attempt_at,
+    -- `AND a.observed` is load-bearing, not defensive. Rows with observed = FALSE
+    -- are counterfactual: outcomes the oracle knows for retries the legacy policy
+    -- never made. They cost no NPCI budget, because they never reached a rail.
+    -- Counting them here would tell the worklist a censored invoice had used all
+    -- four attempts when it had used one, and the agent would decline to retry the
+    -- very invoices the censoring makes most interesting.
+    count(a.attempt_id) FILTER (WHERE a.run_id IS NULL AND a.observed) AS attempts_used,
+    4 - count(a.attempt_id) FILTER (WHERE a.run_id IS NULL AND a.observed)
+                                                    AS attempts_remaining,
+    max(a.attempted_at) FILTER (WHERE a.run_id IS NULL AND a.observed) AS last_attempt_at,
     (array_agg(a.root_cause_class ORDER BY a.attempt_number DESC)
-        FILTER (WHERE a.run_id IS NULL AND a.root_cause_class IS NOT NULL))[1]
+        FILTER (WHERE a.run_id IS NULL AND a.observed AND a.root_cause_class IS NOT NULL))[1]
                                                     AS latest_root_cause
 FROM invoices i
 JOIN subscriptions s USING (subscription_id)

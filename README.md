@@ -53,7 +53,7 @@ tool without an approval from it on record — enforced through the Agent SDK's
 
 ## 04 — Status
 
-Day 2 of 10 (26 Aug → 5 Sep 2026). **217 tests passing, 99% coverage on `compliance/`.**
+Day 3 of 10 (26 Aug → 5 Sep 2026). **316 tests passing, 99% coverage on `compliance/`.**
 
 | | |
 |---|---|
@@ -61,7 +61,7 @@ Day 2 of 10 (26 Aug → 5 Sep 2026). **217 tests passing, 99% coverage on `compl
 | ✅ | Append-only audit trail — enforced by grants *and* triggers, 20 passing tests |
 | ✅ | Six compliance rules + the composing guardrail — pure functions, written test-first |
 | ✅ | Live-lane spike — all 11 probes resolved, no unknowns carried forward ([findings](docs/LIVE_LANE_FINDINGS.md)) |
-| ⬜ | World simulator + counterfactual oracle (Day 3) |
+| ✅ | World simulator + counterfactual oracle — dataset **frozen** at `9d9f1e2242930c4b`, realism gate 13 PASS / 3 ungraded / 0 FAIL ([data](docs/DATA.md)) |
 | ⬜ | Calibrated model (Day 4) |
 | ⬜ | Four-arm paired evaluation (Day 5) |
 | ⬜ | Agent orchestrator + Razorpay MCP (Day 6) |

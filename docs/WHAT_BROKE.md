@@ -121,7 +121,7 @@ message text, not merely on the exception type.
 
 ---
 
-## 2026-08-28 · My own tests violated the invariant I had just written
+## 2026-08-26 · My own tests violated the invariant I had just written
 
 **Believed.** The rule "every non-`APPROVE` verdict must name a `stop_reason`" was
 uncontroversial enough to enforce in `RuleResult.__post_init__` and move on.
@@ -144,7 +144,7 @@ load-bearing, not evidence it is too strict.
 
 ---
 
-## 2026-08-28 · Nearly gated mandate retries on telecom consent
+## 2026-08-26 · Nearly gated mandate retries on telecom consent
 
 **Believed.** While composing `guardrail.py`, the obvious shape was to run every rule
 on every action. More gates, more caution, better.
@@ -168,7 +168,7 @@ Documented as a decision in `COMPLIANCE.md` §1.7, not left to be re-derived.
 
 ---
 
-## 2026-08-28 · My probe scored a gateway route-miss as a pass
+## 2026-08-26 · My probe scored a gateway route-miss as a pass
 
 **Believed.** For probe 10 (`POST /v1/invoices/:id/notify_by/:medium`) I wrote
 `p.ok = p.status in (400, 404)` with the comment *"a 400/404 here means the route
@@ -200,7 +200,7 @@ you already know the answer to. Every ambiguous row in that matrix now has one.
 
 ---
 
-## 2026-08-28 · A boolean verdict field made three states impossible to tell apart
+## 2026-08-26 · A boolean verdict field made three states impossible to tell apart
 
 **Believed.** After fixing the probe-10 verdict, the probe harness was correct. Each
 probe had `ok: bool`, set from `response.is_success`, and the run printed `7/10 passed`.
@@ -236,7 +236,7 @@ a time, until it is widened.
 
 ---
 
-## 2026-08-28 · The tool the plan chose for dead mandates does not exist
+## 2026-08-26 · The tool the plan chose for dead mandates does not exist
 
 **Believed.** Build plan §1.1: `create_registration_link` is available on the **local**
 MCP server (it is one of four tools documented as remote-restricted), and is *"the
@@ -267,6 +267,95 @@ for, which is the argument for reading it rather than counting it:
 - **`READ_ONLY=true` removes 16 of the 41 tools**, `payment_link_notify` among them, and
   `TOOLSETS=orders` narrows to 5 (probe 11). That is a cheap second layer underneath
   `can_use_tool` — defence in depth, not a replacement for the gate.
+
+---
+
+## 2026-08-27 · The worklist counted retries that never happened
+
+**Believed.** `exception_worklist.attempts_used` could simply count rows in
+`payment_attempts` for the invoice.
+
+**Actually true.** That count includes censored rows — attempts the legacy policy never
+made. An invoice whose retries were all suppressed by the value floor would show its
+full budget consumed, and be filtered out of the worklist as exhausted. The failure mode
+is precise and nasty: **the invoices the censoring makes most interesting are exactly the
+ones this would hide**, and it would have looked like a small worklist rather than a bug.
+
+**Cost.** Caught while reading the view against the loaded data, not by a test.
+
+**Changed.** Every aggregate in the view now carries `AND a.observed`, with a comment
+saying why. The general shape — a counterfactual row and a real row in the same table —
+is worth the ergonomics, but every consumer has to declare which one it means.
+
+---
+
+## 2026-08-27 · Two of my tests asserted the opposite of the design
+
+**Believed.** Writing the generator's test suite, two properties looked obviously
+correct: no retry should follow a hard decline, and every open invoice should have
+attempt budget left.
+
+**Actually true.** Both failed, and both were wrong *as tests*.
+
+The legacy cron fires on a fixed schedule and never reads the error code — that is the
+point of it. It retries dead mandates because nobody wired the decline reason into the
+scheduler. Asserting it doesn't would have been asserting that the baseline is smarter
+than it is, and would have deleted arm C's central inefficiency, which
+₹-per-legal-attempt exists to expose.
+
+The exhausted at-risk invoice (`inv_0488_03`, 4 of 4 used) is likewise real: the cap is
+spent and the invoice is still open. That is not a broken row, it is the row the Day-6
+demo needs — the one where the guardrail blocks a fifth attempt on camera.
+
+**Cost.** Half an hour, mostly deciding rather than typing.
+
+**Changed.** Both tests, into the claims actually worth making:
+`test_the_legacy_cron_keeps_retrying_a_dead_mandate` paired with
+`test_no_retry_after_a_dead_mandate_ever_collects` (the waste exists *and* it never
+pays), and `test_the_worklist_is_mostly_actionable_and_partly_exhausted`.
+
+The lesson is the one that keeps recurring: when a test fails, the first question is
+whether the test or the code is describing the world correctly. Twice here it was the
+test, and "fixing" the code would have quietly made the evaluation less honest.
+
+---
+
+## 2026-08-27 · The censoring reason had nowhere to go
+
+**Believed.** `sim/legacy_policy.py` documented the reason as "written to
+`payment_attempts.observed = FALSE` with the reason kept alongside."
+
+**Actually true.** There was no such column. The reason existed on the in-memory row and
+was silently dropped at load. Found by running a `GROUP BY censoring_reason` against the
+loaded data expecting the 144/48 split from the realism gate.
+
+**Cost.** Minutes, but it would have cost a day later — the Day-4 calibration report
+splits on exactly this field, and it would have gone missing at the point of use.
+
+**Changed.** Added `censoring_reason TEXT` with a value `CHECK`, plus
+`CHECK (observed = (censoring_reason IS NULL))` so an unobserved row without a reason —
+an unexplained hole in the training data — cannot be persisted at all. A comment
+describing a column is not a column.
+
+---
+
+## 2026-08-27 · Three chart layouts that only failed when looked at
+
+**Believed.** The realism figure was done once the numbers were right and the palette
+validated by script.
+
+**Actually true.** Rendered and opened, it had label collisions in three places: an NPCI
+annotation sitting on a panel subtitle, stacked-bar labels overlapping each other, and
+the UPI line running through the legend. The palette validator passes on all of them —
+it checks colour, not geometry.
+
+**Cost.** Three render-and-look rounds.
+
+**Changed.** The layout, and the working habit: render the output and look at it before
+calling it done. A fourth defect was caught the same way and was not cosmetic — the
+panel title read "hid 4% of its own retries", computed against *all* attempts when the
+sentence says retries. The correct denominator is 37%. A wrong number in 28pt type,
+which no test covers, is exactly the sort of thing that gets noticed on a projector.
 
 ---
 

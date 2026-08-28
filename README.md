@@ -108,6 +108,7 @@ Stated here rather than waiting to be asked.
 | [`docs/EVALUATION.md`](docs/EVALUATION.md) | Four-arm results, generated from the database |
 | [`docs/LIVE_LANE_FINDINGS.md`](docs/LIVE_LANE_FINDINGS.md) | What the Razorpay API actually permits |
 | [`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) | The failure log, written as it happened |
+| [`COMPLETION_REPORT.md`](COMPLETION_REPORT.md) | Live build status against the ten-day plan — what is done, what is left, and who owns it |
 
 ---
 

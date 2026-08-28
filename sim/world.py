@@ -125,10 +125,15 @@ class WorldParams:
     #: Per-rail baseline technical failure. UPI Autopay rides NPCI and inherits its
     #: outages; card mandates clear on a comparatively boring network. These are the
     #: TD share of the headline failure rates (~18% of failures are TD).
+    #:
+    #: Re-read at n=4,000 together with the balance constants below, and for the same
+    #: reason they moved: TD share is a *share*, so deepening the depletion hazard
+    #: mechanically dilutes it. These values are defined as whatever holds the ratio
+    #: at the documented ~18%, and they were rescaled to keep holding it.
     technical_base: tuple[tuple[str, float], ...] = (
-        ("upi_autopay", 0.021),
-        ("card_mandate", 0.006),
-        ("netbanking", 0.014),
+        ("upi_autopay", 0.0252),
+        ("card_mandate", 0.0072),
+        ("netbanking", 0.0168),
     )
     #: NPCI's peak windows are congested — which is *why* OC-215-A bans execution in
     #: them. Congestion is a technical effect, so it multiplies the TD hazard only:
@@ -139,10 +144,17 @@ class WorldParams:
     bank_spread: float = 0.55
 
     # --- balance / business decline (BD_transient) ------------------------------
-    #: Hazard on the customer's salary day: the account was just funded.
-    balance_floor: float = 0.012
+    #: Hazard on the customer's salary day: the account was just funded. An account
+    #: that was credited this morning declining a ₹399 debit is close to a pure
+    #: technical event, so this floor is small on purpose.
+    balance_floor: float = 0.005
     #: Asymptotic hazard deep into the salary cycle, before amount pressure.
-    balance_ceiling: float = 0.185
+    #:
+    #: Floor and ceiling together are the payday signal — the thing the model is
+    #: supposed to discover and the legacy policy's fixed 09:00 T+1/2/3 schedule is
+    #: blind to. Their *spread* is what validate_realism.py grades, and it competes
+    #: against the cycle-invariant hazards (technical, authorization) that dilute it.
+    balance_ceiling: float = 0.25
     #: Days for depletion to reach 1 - 1/e of the way from floor to ceiling. Twelve
     #: puts the steep part of the curve in the second and third weeks, which is where
     #: Indian subscription debits actually start bouncing.
@@ -169,9 +181,14 @@ class WorldParams:
     #:
     #: Without this the simulator gives every rail the same balance hazard and card
     #: mandates fail at 8%, which sim/validate_realism.py catches and refuses.
+    #:
+    #: The card figure was first read at 500 subscriptions, where it rested on ~1,000
+    #: attempts and had a standard error wide enough to sit inside the 2-3% band by
+    #: luck. At 4,000 it rests on ~9,100 and reads stably. The band did not move; the
+    #: constant did, staying well under netbanking's, which stays under UPI's.
     balance_exposure: tuple[tuple[str, float], ...] = (
         ("upi_autopay", 1.00),
-        ("card_mandate", 0.10),
+        ("card_mandate", 0.05),
         ("netbanking", 0.90),
     )
 
@@ -186,7 +203,7 @@ class WorldParams:
     #: fewest surfaces. Netbanking sits between them.
     authorization_base: tuple[tuple[str, float], ...] = (
         ("upi_autopay", 0.013),
-        ("card_mandate", 0.007),
+        ("card_mandate", 0.006),
         ("netbanking", 0.009),
     )
 

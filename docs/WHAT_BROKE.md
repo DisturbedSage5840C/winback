@@ -359,6 +359,85 @@ which no test covers, is exactly the sort of thing that gets noticed on a projec
 
 ---
 
+## 2026-08-28 · The test cohort was too thin to measure anything with
+
+**Believed.** 500 subscriptions was a reasonable population. It produced 3,762 invoices
+and a realism gate that passed 13 of 13 graded checks, so the dataset looked finished.
+
+**Actually true.** The split is ordered in time, which makes the test cohort the *newest*
+mandates — the ones with the fewest billing cycles behind them and therefore the fewest
+failures. Counting what was actually in it: **20 observed retries and 24 failed first
+charges.** The Day-5 headline is "measured money recovered across a batch" with a paired
+bootstrap CI. On 24 invoices that interval would have been wide enough to cover all four
+arms, meaning the evaluation could not have distinguished Winback from the baseline it
+exists to beat. The gate passed because it grades the *whole* population; nothing in it
+looked at the cohort the results would actually be computed on.
+
+**Cost.** Half a day, and it re-opened the world constants after they had been frozen —
+paid on Day 4 instead of Day 5, which is the only reason it was affordable at all.
+
+**Changed.** `N_SUBSCRIPTIONS` to 4,000, chosen by measuring test-cohort thickness at
+500 / 1,500 / 2,500 / 4,000 rather than by picking a round number: 196 observed retries
+and 237 recovery opportunities, for 2.3 seconds of generation. `docs/DATA.md` §04 now
+carries a per-cohort table, so the number that actually constrains the evaluation is
+visible instead of derivable.
+
+---
+
+## 2026-08-28 · Two world constants had been fitted to noise
+
+**Believed.** The two constants tuned on Day 3 were set from mechanism and confirmed by
+the gate. Both card-rail figures sat inside their bands, so both were right.
+
+**Actually true.** They sat inside their bands *at n≈1,000 attempts*, where the standard
+error on a 2-3% rate is wide enough to land inside a one-point band by luck. Growing the
+population to 4,000 moved the card failure rate to 3.03% (n≈9,100) — outside the band —
+and the UPI salary-cycle ratio to 1.96×, just under its 2.0× floor. The band had not
+changed and the mechanism had not changed; only the sample size had, and the sample size
+was what had been holding the numbers up.
+
+The tempting move was to widen the band by a tenth of a point. That would have been the
+single most dishonest edit available anywhere in this repo — a gate relaxed because it
+failed is not a gate, and every claim downstream of it inherits the relaxation.
+
+**Cost.** Two hours, most of it spent on a sweep harness whose first version computed the
+salary-cycle ratio differently from the gate (it used the `insufficient_funds` share where
+the gate uses the overall failure rate on first charges) and reported 5.2× where the gate
+reported 2.0×. Optimising against a metric that is not the one being graded is worse than
+not optimising, because it produces confident wrong answers. The fix was to delete the
+reimplementation and import `_cycle_ratio` from `sim/validate_realism.py` directly.
+
+**Changed.** Five constants re-read at the larger sample, each held inside the mechanism
+it already claimed and documented one-by-one in `docs/DATA.md` §06, which is now titled
+"Every tuning pass, in full" rather than "The one tuning pass". Every graded check now
+sits mid-band rather than against an edge — a world that passes by a tenth of a point is
+one reseed from failing, and that fragility is itself evidence of fitting.
+
+---
+
+## 2026-08-28 · Five attempts were dated into the future
+
+**Believed.** `AS_OF` being a constant rather than `now()` was enough to keep the dataset
+reproducible and free of future-dated rows. A test asserted exactly that, and it passed.
+
+**Actually true.** The legacy policy schedules retries at T+1/T+2/T+3 from the failed
+charge. For an invoice in its current cycle the schedule is truncated by a random draw
+of "how far the merchant's cron happened to get" — but nothing checked the resulting
+timestamps against `AS_OF`. An invoice whose first charge failed on 23 August therefore
+got a T+1 retry at 09:00 on 24 August: nine hours past the freeze instant, with an oracle
+outcome nobody could have observed. At 500 subscriptions no invoice landed in that
+one-day window, so the test passed for two days by luck. At 4,000, five did.
+
+**Cost.** Twenty minutes, and only because the population change surfaced it. It would
+otherwise have shipped as five training rows containing information from the future.
+
+**Changed.** The current-cycle schedule is now truncated by **both** limits, the tighter
+winning: how far the cron got, and how far the clock allows. The existing test needed no
+change — it was correct all along and had simply never been given a population large
+enough to fail on, which is the argument for keeping assertions that look redundant.
+
+---
+
 ## Open
 
 - **S2S Recurring activation** — assumed unavailable. If it is granted, the live lane

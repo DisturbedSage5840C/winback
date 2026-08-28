@@ -62,7 +62,13 @@ POPULATION_SEED = "winback-population-2026"
 #: would mean the numbers in docs/EVALUATION.md quietly stopped matching the data.
 AS_OF = datetime(2026, 8, 24, 0, 0, tzinfo=IST)
 
-N_SUBSCRIPTIONS = 500
+#: Sized by the *test* cohort, not by the total. The split is ordered in time, so the
+#: test cohort is the newest mandates — the ones with the fewest billing cycles behind
+#: them. At 500 subscriptions it held 20 observed retries and 24 failed first charges,
+#: which is too thin to calibrate on and far too thin for the four-arm money headline:
+#: a paired bootstrap over 24 invoices produces an interval wide enough to cover every
+#: arm. 4,000 gives the test cohort 173 retries and 210 recovery opportunities.
+N_SUBSCRIPTIONS = 4_000
 
 #: How far back the oldest mandate starts. Long enough that ``paid_count`` reaches
 #: the reliability plateau (8 cycles) for a decent share of the population, so the
@@ -658,7 +664,14 @@ def _dun(
     schedule = retry_schedule(mandate, invoice.charge_at, legacy)
     if is_current:
         already = _pick(_rng("dunning", invoice.invoice_id), RETRIES_ALREADY_MADE_MIX)
-        schedule = schedule[:already]
+        # Two separate limits, and the tighter one wins. The draw says how far a
+        # merchant's cron happened to get; AS_OF says how far it *could* have got.
+        # An invoice that failed yesterday has a T+1 retry on the schedule that the
+        # clock has not reached yet — recording it would date an attempt into the
+        # future and hand the model an outcome nobody could have observed. Offsets
+        # increase, so the reachable set is a prefix.
+        reachable = sum(1 for r in schedule if r.execute_at <= AS_OF)
+        schedule = schedule[: min(already, reachable)]
 
     for retry in schedule:
         row = _attempt_row(

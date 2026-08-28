@@ -34,7 +34,7 @@ from sim.world import Mandate
 
 #: The dataset the whole project runs on. Built once — it is pure, so sharing it
 #: across the module costs nothing and every test sees the same rows the model will.
-FROZEN_FINGERPRINT = "9d9f1e2242930c4b"
+FROZEN_FINGERPRINT = "f04fd87f6eb050fa"
 
 
 @pytest.fixture(scope="module")
@@ -81,7 +81,7 @@ def test_each_entity_is_seeded_on_itself_not_on_call_order(dataset: Dataset) -> 
 
     ``_rng`` keys on what it is generating rather than on a shared stream, which is
     what lets a test build 40 subscriptions and reason about the same customers the
-    500-subscription dataset holds. If this ever fails, every fast test in this file
+    4,000-subscription dataset holds. If this ever fails, every fast test in this file
     is quietly testing a different world than the one that ships.
     """
     small = generate.build_dataset(40)

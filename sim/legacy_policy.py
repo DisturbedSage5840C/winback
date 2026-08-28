@@ -10,16 +10,22 @@ retry" has proved very little.
 invoices above ₹500 that were not netbanking. Those two conditions decide which
 outcomes were *ever observed*, and both correlate with the outcome — a small debit
 against the same monthly headroom is under less amount pressure and so more likely
-to clear. The censored region is systematically *easier* than the observed one, so a
-model fit on observed rows alone will be miscalibrated exactly where it has no data,
-in a direction that costs money: it will under-predict recovery on precisely the
-invoices it was never allowed to try.
+to clear, and netbanking is a rail with lower balance exposure than UPI Autopay.
 
-That is the point. `docs/EVALUATION.md` reports calibration on the observed and the
+The bias this produces is not the one it looks like. Measured against the oracle, the
+censored region's *marginal* success rate is close to the observed one (61.8% vs 58.2%),
+and most of even that is attempt-number mix. What differs is the covariates: the
+censored region is cheap, netbanking, and early in a mandate's life, and the observed
+data contains almost none of that combination. The model therefore has no evidence
+about a corner of the space it will be asked to act in — and Day 4 measured the price
+of that at ECE 0.4420 there against 0.0342 on the observed slice, uniformly pessimistic
+and still correctly ordered.
+
+That is the point. `docs/EVALUATION.md` §06 reports calibration on the observed and the
 censored slices separately, measured against the oracle, and the gap between them is
 a more honest credibility signal than any headline AUC. A model that has never been
-shown a hard case cannot be trusted on one, and saying so with a number is better
-than hoping nobody asks.
+shown a case cannot be trusted on one, and saying so with a number is better than
+hoping nobody asks.
 
 **It commits real violations.** The schedule below predates NPCI OC-215-A (1 August
 2025) and was never updated, which is the ordinary reason production systems break
@@ -164,14 +170,35 @@ def retry_schedule(
     else:
         offsets, clock, branch = params.retry_offsets_days, params.retry_hour, "standard"
 
-    schedule = tuple(
-        ScheduledRetry(
-            attempt_number=index + 2,  # attempt 1 is the original charge
-            execute_at=_at_hour(charge_at + timedelta(days=offset), clock),
-            rationale=f"legacy {branch}: fixed T+{offset} retry at {clock:%H:%M} IST",
+    # A cron cannot run in the past. The urgent branch fires at 11:30 with a T+0
+    # offset, so an invoice charged at 15:00 would otherwise be "retried" at 11:30
+    # that morning -- three and a half hours before the charge it is retrying. A daily
+    # 11:30 job in that situation simply picks the failure up on its next run, and each
+    # subsequent run is a further day out, so the slot is rolled forward whole days
+    # until it is strictly after both the charge and the retry before it. The offsets
+    # therefore describe the job's schedule rather than a guaranteed spacing, which is
+    # what a fixed-hour cron actually gives you.
+    retries: list[ScheduledRetry] = []
+    floor = charge_at
+    for index, offset in enumerate(offsets):
+        execute_at = _at_hour(charge_at + timedelta(days=offset), clock)
+        slipped = 0
+        while execute_at <= floor:
+            execute_at += timedelta(days=1)
+            slipped += 1
+        rationale = f"legacy {branch}: fixed T+{offset} retry at {clock:%H:%M} IST"
+        if slipped:
+            rationale += f" (next run, +{slipped}d: the {clock:%H:%M} job had already run)"
+        retries.append(
+            ScheduledRetry(
+                attempt_number=index + 2,  # attempt 1 is the original charge
+                execute_at=execute_at,
+                rationale=rationale,
+            )
         )
-        for index, offset in enumerate(offsets)
-    )
+        floor = execute_at
+
+    schedule = tuple(retries)
 
     # Both branches must fit inside NPCI's 1+3. Not because the legacy system knows
     # about the cap -- it does not -- but because payment_attempts.attempt_number is

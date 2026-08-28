@@ -438,6 +438,174 @@ enough to fail on, which is the argument for keeping assertions that look redund
 
 ---
 
+## 2026-08-28 · The censored slice was easier because my code made it easier
+
+**Believed.** The headline evidence for the whole selection-bias argument: mean oracle
+`p(success)` was **75.6%** on the retries the legacy filters suppressed against **58.2%**
+on the retries actually made. A 17-point gap, reported in `DATA.md` §03 and graded by the
+realism gate. The story wrote itself — the value floor and the netbanking exclusion were
+hiding the easy money.
+
+**Actually true.** The gap was an artefact of my own control flow. The observed dunning
+branch stops presenting debits at the first capture, because a merchant who has been paid
+does not keep debiting. The shadow branch — the counterfactual schedule materialised for
+censored invoices — did not stop. It ran all three retries unconditionally, so an invoice
+whose shadow retry #2 captured still got shadow retries #3 and #4, drawn under exactly
+the conditions that had just succeeded. The censored slice was padded with attempts
+nobody would ever have made, all of them easy.
+
+With the two branches doing the same thing, the honest figure is **61.8% vs 58.2%**, and
+censored attempts fall from 1,686 to 786.
+
+**Cost.** Half a day, and it cost the most quotable number in the project. Found by
+reading the shadow branch beside the observed one while writing `ml/dataset.py`, not by
+any test — both branches were individually correct, and nothing asserted they agreed.
+
+**Changed.** The shadow loop now breaks on capture and carries
+`last_technical_failure_at` forward exactly as the real one does; the docstring says
+explicitly that what is discarded for a censored invoice is the shadow *status*, not the
+shadow control flow. Then the argument was rebuilt on what is actually true, which turned
+out to be the stronger version: the bias is not in the marginal, it is in the covariates.
+The censored region is cheap, netbanking, and early in a mandate's life, and the observed
+data holds almost none of that combination. Day 4 priced it — ECE **0.4420** there against
+**0.0342** on the observed slice, uniformly pessimistic and *still correctly ordered*.
+
+Three ungraded decomposition rows were added to the realism gate (the gap per attempt
+number, and what each filter variable is worth measured on first charges, which no filter
+touches) because the surviving graded check now reads 3.6 points against a ≥3-point band.
+**The band was not lowered.** A marginal-rate check is simply the wrong instrument for a
+bias that lives in the covariates, and the fix for a check that can no longer see the
+thing it was written about is a better check, not a wider one.
+
+The general lesson: a number that flatters the thesis deserves more scrutiny than one
+that does not, and "two code paths that are supposed to be the same policy" is a place to
+look. I found this one by luck — the assertion that would have caught it is
+`test_the_shadow_schedule_stops_at_the_first_capture_too`, which now sits next to the
+observed-branch test it should always have been paired with.
+
+---
+
+## 2026-08-28 · A retry that happened before the charge it was retrying
+
+**Believed.** The retry schedule was settled: fixed offsets from the failed charge, a
+fixed hour, clamped to `AS_OF` so nothing lands in the future. Two days of green tests.
+
+**Actually true.** The urgent branch fires at **11:30 IST with a T+0 offset**. An invoice
+charged at 15:00 therefore got its "same-day" retry at 11:30 *that morning* — three and a
+half hours before the failure it was responding to. **122 attempts** dataset-wide.
+
+The damage was not cosmetic. `PriorState.before` builds a candidate's features from every
+attempt dated earlier than it, so a retry preceding its own charge handed the model a
+first charge that already had a failure behind it: `attempt_number=1` with
+`prior_failures=1`, a sequence no merchant can present.
+
+**Cost.** An hour, and it was caught by `ml/tests/test_features.py` —
+`test_a_censored_row_sees_its_own_counterfactual_history`, which asserts
+`attempt_number == prior_failures + 1` and failed on 1 of 85 rows. The realism gate,
+which is the thing nominally responsible for the dataset, has no check that could have
+seen it: every rate it grades was still inside its band.
+
+**Changed.** `retry_schedule` rolls a slot forward whole days until it is strictly after
+both the charge and the previous retry, and says so in the rationale
+(`"(next run, +1d: the 11:30 job had already run)"`). That is what a fixed-hour cron
+actually does — it picks the failure up on its next run — so the offsets describe the
+job's schedule rather than a guaranteed spacing. Three regression tests were added,
+including one asserting a slipped retry still consumes its full legal budget.
+
+The general lesson, and the reason this is logged separately from the shadow-schedule
+entry it shares a day with: **the layer that finds a bug is rarely the layer responsible
+for it.** Both of Day 4's dataset bugs were found by model code, because the model is the
+first consumer that reads the rows *in order* rather than in aggregate. A validation gate
+that only grades marginal rates cannot see a sequencing error, however many checks it has.
+
+---
+
+## 2026-08-28 · The calibrator with the best score was the one that had to lose
+
+**Believed.** Fit sigmoid, isotonic and temperature on the calibration split, report ECE
+for each, take the winner. Isotonic won by a factor of sixty — ECE 0.0000 against
+sigmoid's 0.0372.
+
+**Actually true.** Two things were wrong, and the second is the one that mattered.
+
+*It was scored in-sample.* Each calibrator was being evaluated on the rows it had just
+been fitted on. A free monotone step function fitted on 4,791 rows can reproduce those
+4,791 rows, so the comparison was not ranking calibration quality — it was ranking
+capacity to memorise, between three methods of wildly different capacity. Out of fold,
+isotonic's ECE rises to 0.0006 and its advantage is real but much smaller.
+
+*It emits exact certainties.* Isotonic is a step function bounded by its outermost knots,
+so every score outside its fitted range maps to exactly 0.0 or exactly 1.0 — which it did
+to 242 calibration rows at zero, 560 at one, and **111 of the 118 censored calibration
+rows, every one of them at zero.** The Day-5 policy ranks candidate actions by expected
+rupees, and an expected value of exactly zero can never be the argmax. Shipping isotonic
+would have made Winback decline to retry precisely the invoices the legacy policy declined
+to retry — reimplementing the selection bias this project exists to remove, one layer
+further down, and silently. It would have posted the best calibration number in the repo
+while doing it.
+
+**Cost.** An afternoon, most of it spent deciding whether admissibility was a tiebreak or
+a gate.
+
+**Changed.** Selection runs over five contiguous time-ordered folds inside the calibration
+split, and **both** columns are printed so a reader can see the distance between them.
+Admissibility is a hard gate evaluated before ECE is compared at all, checked on the
+calibration cohort's censored slice so disqualifying isotonic costs nothing that was being
+held back. If no candidate is admissible the pipeline raises rather than falling back to
+the uncalibrated booster — that fallback is a decision about what the system predicts, and
+a person should make it after reading the message, not an `except` branch. All of it is
+pinned by tests, including `test_the_choice_would_have_been_different_in_sample`, which
+keeps the bug alive as an assertion.
+
+---
+
+## 2026-08-28 · I invented a band, then withdrew it
+
+**Believed.** While adding the decomposition checks to the realism gate, I wrote a graded
+check on how much of the observed-vs-censored gap survives conditioning on attempt number,
+with a band around it.
+
+**Actually true.** There is no published figure for that quantity, and there could not be
+— it is a property of a censoring policy I wrote. The band came from the number the world
+already produced, which makes it a target the world was guaranteed to hit, and a gate that
+cannot fail is decoration. `sim/validate_realism.py`'s own stated rule is **no band without
+a source**, and I had broken it inside the file that states it.
+
+**Cost.** Ten minutes, entirely because I re-read the rule while looking for something
+else.
+
+**Changed.** All three decomposition checks are `[REPORT]`, ungraded, printing their
+numbers and their `n` without a verdict. Six of the nineteen checks are now ungraded, and
+that ratio is a feature: the gate's credibility comes from the bands it *does* grade
+having sources, which is only worth something if inventing one is not an option.
+
+---
+
+## 2026-08-28 · Four more chart defects that only failed when looked at
+
+**Believed.** The calibration figure was done: palette validated by script, numbers
+correct, three panels laid out.
+
+**Actually true.** Rendered and opened, it had four defects a test could not have caught.
+Two annotations used `←` and `∈`, neither of which exists in Helvetica Neue — matplotlib
+substitutes a tofu box rather than failing, so the committed PNG carried two blank
+rectangles while the build printed a warning nobody reads. The right panel's subtitle ran
+off the figure edge. The reliability legend sat on top of the observed curve, and the
+calibrator legend collided with the temperature bar. Fixing the first three surfaced a
+fourth: the retitled left subtitle then overran into the right column's.
+
+**Cost.** Four render-and-look rounds — the same working habit as the realism figure two
+days earlier, applied because that entry exists.
+
+**Changed.** ASCII notes, explicit legend corners, and subtitles kept under ~100
+characters, each with a comment saying what the constraint actually is (`_panel_title`
+reserves 18pt of pad, so a second line grows *up* into the title). The lesson is unchanged
+from 26 August and is repeated here because repeating it is the point: **render the output
+and look at it before calling it done.** The palette validator checks colour, not geometry,
+and no test in this repository will ever fail because a figure is unreadable.
+
+---
+
 ## Open
 
 - **S2S Recurring activation** — assumed unavailable. If it is granted, the live lane

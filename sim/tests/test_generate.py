@@ -34,7 +34,7 @@ from sim.world import Mandate
 
 #: The dataset the whole project runs on. Built once — it is pure, so sharing it
 #: across the module costs nothing and every test sees the same rows the model will.
-FROZEN_FINGERPRINT = "f04fd87f6eb050fa"
+FROZEN_FINGERPRINT = "c32b2b063cd87707"
 
 
 @pytest.fixture(scope="module")
@@ -294,6 +294,69 @@ def test_dunning_stops_at_the_first_capture(
         outcomes = [a.outcome for a in observed]
         if "captured" in outcomes:
             assert outcomes.index("captured") == len(outcomes) - 1, invoice_id
+
+
+def test_the_shadow_schedule_stops_at_the_first_capture_too(
+    by_invoice: dict[str, list[generate.AttemptRow]],
+) -> None:
+    """The counterfactual branch has to obey the same control flow as the real one.
+
+    It did not, once. The censored branch materialised all three retries
+    unconditionally while the observed branch returned on the first capture, so a
+    censored invoice could carry a shadow attempt #4 dated after a shadow attempt #2
+    that had already collected the money. Those rows describe a world that does not
+    exist, and they were being fed to the observed-versus-censored calibration report
+    as if they were evidence about one that does.
+    """
+    for invoice_id, attempts in by_invoice.items():
+        shadow = sorted(
+            (a for a in attempts if not a.observed), key=lambda a: a.attempt_number
+        )
+        outcomes = [a.outcome for a in shadow]
+        if "captured" in outcomes:
+            assert outcomes.index("captured") == len(outcomes) - 1, invoice_id
+
+
+def test_a_shadow_retry_is_numbered_as_if_it_had_been_presented(
+    by_invoice: dict[str, list[generate.AttemptRow]],
+) -> None:
+    """Censored retries run 2, 3, 4 without gaps, continuing the real first charge.
+
+    The numbering is what makes a censored row coherent enough to score: NPCI counts
+    presented debits, so a shadow attempt #4 is a claim that #2 and #3 were also
+    presented, and both must be present for the row's prior-failure count to mean
+    anything. A gap here would mean ``ml/dataset.py`` was building feature rows whose
+    ``attempt_number`` and ``prior_failures_this_invoice`` disagree.
+    """
+    for invoice_id, attempts in by_invoice.items():
+        shadow = sorted(a.attempt_number for a in attempts if not a.observed)
+        if shadow:
+            assert shadow == list(range(2, 2 + len(shadow))), invoice_id
+
+
+def test_every_attempt_in_the_dataset_happens_in_order(
+    dataset: Dataset, by_invoice: dict[str, list[generate.AttemptRow]]
+) -> None:
+    """Attempt *n+1* is later than attempt *n*, and all of them are later than the
+    charge.
+
+    122 attempts failed this before the urgent branch learned that a cron cannot run
+    in the past. The damage is not cosmetic: ``PriorState.before`` reads every attempt
+    dated earlier than the candidate, so a retry that precedes its own first charge
+    hands the model a first charge that already has a failure behind it — a feature
+    row describing a sequence no merchant can ever present.
+    """
+    charge_at = {invoice.invoice_id: invoice.charge_at for invoice in dataset.invoices}
+    for invoice_id, attempts in by_invoice.items():
+        for observed in (True, False):
+            slice_ = sorted(
+                (a for a in attempts if a.observed is observed),
+                key=lambda a: a.attempt_number,
+            )
+            moments = [a.attempted_at for a in slice_]
+            assert moments == sorted(moments), invoice_id
+            assert len(set(moments)) == len(moments), invoice_id
+            assert all(m >= charge_at[invoice_id] for m in moments), invoice_id
 
 
 def test_a_written_off_invoice_collected_nothing(

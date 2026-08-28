@@ -258,3 +258,49 @@ def test_a_charge_late_in_the_day_still_retries_the_next_morning() -> None:
 
     assert first.strftime("%Y-%m-%d %H:%M") == "2026-09-04 09:00"
     assert first - late < timedelta(hours=10)
+
+
+def test_a_retry_can_never_precede_the_charge_it_retries() -> None:
+    """The urgent branch fires at 11:30 with a T+0 offset.
+
+    An invoice charged at 15:00 would take that literally and "retry" at 11:30 that
+    morning — three and a half hours before the charge failed. 122 attempts in the
+    frozen dataset did exactly that, which is not a small realism blemish: a feature
+    row is built from the attempts before it, so a time-travelling retry gave the
+    model a first attempt with a prior failure already on it.
+    """
+    afternoon = datetime(2026, 9, 3, 15, 0, tzinfo=IST)
+    schedule = retry_schedule(mandate(amount=paise(5_000)), afternoon)
+
+    assert [r.execute_at.astimezone(IST).strftime("%Y-%m-%d %H:%M") for r in schedule] == [
+        "2026-09-04 11:30",
+        "2026-09-05 11:30",
+        "2026-09-06 11:30",
+    ]
+
+
+def test_a_slipped_retry_still_consumes_the_full_legal_budget() -> None:
+    """Rolling a slot forward must not merge two runs into one.
+
+    T+0 and T+1 both resolve to the next day's 11:30 for an afternoon charge; if the
+    second were not pushed past the first, arm C would quietly consume three legal
+    attempts instead of four and its ₹-per-attempt figure would improve because of a
+    bug.
+    """
+    afternoon = datetime(2026, 9, 3, 15, 0, tzinfo=IST)
+    schedule = retry_schedule(mandate(amount=paise(5_000)), afternoon)
+    moments = [r.execute_at for r in schedule]
+
+    assert len(schedule) == MAX_ATTEMPTS - 1
+    assert len(set(moments)) == len(moments)
+    assert moments == sorted(moments)
+
+
+def test_a_slipped_retry_says_so_in_its_rationale() -> None:
+    """The audit row has to explain a date that does not match the T+ offset in it."""
+    afternoon = datetime(2026, 9, 3, 15, 0, tzinfo=IST)
+    slipped = retry_schedule(mandate(amount=paise(5_000)), afternoon)[0]
+    on_time = retry_schedule(mandate(amount=paise(5_000)), CHARGE_AT)[0]
+
+    assert "next run" in slipped.rationale
+    assert "next run" not in on_time.rationale

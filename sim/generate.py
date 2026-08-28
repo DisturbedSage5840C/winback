@@ -67,7 +67,7 @@ AS_OF = datetime(2026, 8, 24, 0, 0, tzinfo=IST)
 #: them. At 500 subscriptions it held 20 observed retries and 24 failed first charges,
 #: which is too thin to calibrate on and far too thin for the four-arm money headline:
 #: a paired bootstrap over 24 invoices produces an interval wide enough to cover every
-#: arm. 4,000 gives the test cohort 173 retries and 210 recovery opportunities.
+#: arm. 4,000 gives the test cohort 194 observed retries and 237 failed first charges.
 N_SUBSCRIPTIONS = 4_000
 
 #: How far back the oldest mandate starts. Long enough that ``paid_count`` reaches
@@ -626,6 +626,12 @@ def _dun(
     retries never happened, so a shadow retry that the oracle says would have
     captured must not turn an unpaid invoice into a recovered one. Letting it would
     hand the model a label it could never have seen and inflate every arm at once.
+
+    The shadow schedule stops at the first shadow capture, exactly as the observed
+    schedule does. A dunning policy that kept presenting debits after the money
+    arrived would not be the legacy policy with its filters removed; it would be a
+    different policy, and the rows it wrote would describe attempts nobody would ever
+    have made. What is discarded is the shadow *status*, not the shadow control flow.
     """
     if censored_because is not None:
         uncensored = LegacyParams(
@@ -638,26 +644,30 @@ def _dun(
             urgent_hour=legacy.urgent_hour,
         )
         if not is_current:
+            shadow_technical_failure_at = last_technical_failure_at
             for retry in retry_schedule(mandate, invoice.charge_at, uncensored):
-                history.attempts.append(
-                    _attempt_row(
-                        subscription=subscription,
-                        invoice=invoice,
-                        customer=customer,
-                        mandate=mandate,
-                        context=AttemptContext(
-                            invoice_id=invoice.invoice_id,
-                            cycle_number=invoice.cycle_number,
-                            attempt_number=retry.attempt_number,
-                            action="retry",
-                            execute_at=retry.execute_at,
-                            last_technical_failure_at=last_technical_failure_at,
-                        ),
-                        observed=False,
-                        censored_because=censored_because,
-                        params=params,
-                    )
+                row = _attempt_row(
+                    subscription=subscription,
+                    invoice=invoice,
+                    customer=customer,
+                    mandate=mandate,
+                    context=AttemptContext(
+                        invoice_id=invoice.invoice_id,
+                        cycle_number=invoice.cycle_number,
+                        attempt_number=retry.attempt_number,
+                        action="retry",
+                        execute_at=retry.execute_at,
+                        last_technical_failure_at=shadow_technical_failure_at,
+                    ),
+                    observed=False,
+                    censored_because=censored_because,
+                    params=params,
                 )
+                history.attempts.append(row)
+                if row.outcome == "captured":
+                    break
+                if row.root_cause_class == RootCause.TD:
+                    shadow_technical_failure_at = row.attempted_at
         # No observed retry ever happened, so the invoice is unpaid either way.
         return "at_risk" if is_current else "written_off"
 

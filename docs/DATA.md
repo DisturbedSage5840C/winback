@@ -1,6 +1,6 @@
 # Data
 
-The dataset is **frozen**: `Winback dataset v1 (f04fd87f6eb050fa)`. The fingerprint is
+The dataset is **frozen**: `Winback dataset v1 (c32b2b063cd87707)`. The fingerprint is
 a content hash over every generated row, pinned in `sim/tests/test_generate.py`. Change
 a world constant and that test fails — which forces the realism gate to be re-run and
 this document updated in the same commit, instead of the headline numbers quietly
@@ -11,10 +11,10 @@ drifting away from the prose describing them.
 | customers | 4,000 |
 | subscriptions | 4,000 — train 2,400 / calibrate 800 / test 800 |
 | invoices | 30,210 |
-| payment attempts | 34,764 — 33,078 observed, 1,686 censored (4.8%) |
+| payment attempts | 33,866 — 33,080 observed, 786 censored (2.3%) |
 | first-charge failure rate | 8.82% over 30,210 debits |
-| invoice outcomes | 27,545 paid · 1,648 recovered · 860 written off · 157 at risk |
-| revenue at risk | ₹5,63,260 |
+| invoice outcomes | 27,545 paid · 1,650 recovered · 860 written off · 155 at risk |
+| revenue at risk | ₹5,60,124 |
 | as of | 2026-08-24 IST |
 
 Regenerate and load with `.venv/bin/python -m sim.generate --load`; verify with
@@ -99,8 +99,8 @@ Every clause is a decision someone plausibly made, and each has a consequence:
 
 | Clause | Why it was set | What it does to the data |
 |---|---|---|
-| `amount > ₹500` | "don't waste a gateway call on small invoices" | **1,107 censored retries** — bias on a variable correlated with the outcome |
-| `method != netbanking` | the retry job was never extended to a late-onboarded rail | **579 censored retries** — not a policy at all, just a gap nobody closed |
+| `amount > ₹500` | "don't waste a gateway call on small invoices" | **531 censored retries** — bias on a variable correlated with the outcome |
+| `method != netbanking` | the retry job was never extended to a late-onboarded rail | **255 censored retries** — not a policy at all, just a gap nobody closed |
 | 11:30 IST urgent branch | legal when it was written; NPCI moved in Aug 2025 | countable peak-window **violations** in arms B and C |
 | 09:00 IST standard branch | so a human could watch the run | legal under OC-215-A by accident, not by design |
 
@@ -110,12 +110,34 @@ status.** In real history those retries never happened, so a shadow retry the or
 would have captured must not turn an unpaid invoice into a recovered one. Letting it
 would hand the model a label it could never have seen and inflate every arm at once.
 
-**The censored region is genuinely different, and measurably so.** Mean oracle
-`p(success)` is **75.6% on the retries the legacy filters suppressed** versus **58.2% on
-the retries it actually made**. The suppressed region is the *easier* one — small
-invoices and a rail with lower balance exposure — which is exactly the bias a value
-floor produces. That gap is what makes the Day-4 observed-vs-censored calibration split
-a real test rather than a formality.
+**The censored region is different, but not in the way a headline rate would show.**
+Mean oracle `p(success)` is **61.8% on the retries the legacy filters suppressed** versus
+**58.2% on the retries it actually made** — a 3.6-point gap, and most of that is mix
+rather than difficulty. Held at a fixed attempt number the two slices are close, and at
+the fourth attempt the censored slice is the *harder* one:
+
+| Attempt | Observed | Censored | n (obs / cens) |
+|---|---|---|---|
+| 2 | 72.0% | 75.5% | 1,973 / 562 |
+| 3 | 36.7% | 38.2% | 543 / 138 |
+| 4 | 14.6% | 10.5% | 354 / 86 |
+
+The two filter variables were then priced directly, on **first charges** — the one
+population no legacy filter touches, so the comparison is not conditioned on the
+selection being measured. Crossing the ₹500 floor is worth **+1.0 points** of
+`p(success)` (92.1% below vs 91.1% above, n=5,688/24,522); netbanking versus UPI Autopay
+is worth **+3.4 points** (91.7% vs 88.3%, n=2,375/18,735). The value floor barely moves
+the outcome at all; the rail exclusion moves it, and it was never a policy in the first
+place.
+
+So the bias is **not in the marginal — it is in the covariates.** The censored region is
+cheap, netbanking, and early in a mandate's life, and the observed data contains almost
+none of that combination. That is the harder version of the selection problem, not the
+easier one: a merchant watching their recovery rate would see nothing wrong, because
+there is nothing wrong with the rate. What is wrong is that the model has no evidence
+about a corner of the space it will be asked to act in. Day 4 measured the consequence —
+ECE **0.4420** on the censored slice against **0.0342** on the observed one, uniformly
+pessimistic, and still correctly ordered. See `EVALUATION.md` §06.
 
 ## 04 — Splits
 
@@ -131,45 +153,70 @@ records what that floor turned out to be.
 
 | Cohort | Subscriptions | Invoices | Observed retries | Failed first charges |
 |---|---|---|---|---|
-| train | 2,400 | 23,626 | 2,262 | 2,025 |
-| calibrate | 800 | 4,378 | 415 | 403 |
-| test | 800 | 2,206 | 196 | 237 |
+| train | 2,400 | 23,626 | 2,263 | 2,025 |
+| calibrate | 800 | 4,378 | 413 | 403 |
+| test | 800 | 2,206 | 194 | 237 |
+
+`ml/dataset.py` turns those cohorts into feature matrices, one row per attempt: **train
+25,889 · calibrate 4,791 · test 2,400**, plus **118 / 85** censored rows held out of both
+fits and used only to measure the model against the oracle. Censored rows never enter a
+training or calibration matrix — `ml/tests/test_features.py` asserts it, because a
+counterfactual row and a real row live in the same table and every consumer has to
+declare which one it means.
 
 ## 05 — Realism gate
 
-`sim/validate_realism.py` is a gate, not a report: 16 checks, each carrying its source,
+`sim/validate_realism.py` is a gate, not a report: 19 checks, each carrying its source,
 its `n`, and its band. It exits non-zero if any graded check falls outside its band.
-Current state — **PASS = 13, REPORT = 3, FAIL = 0**.
+Current state — **PASS = 13, REPORT = 6, FAIL = 0**.
 
 ![Realism gate](assets/realism.png)
 
-Three checks are deliberately **ungraded** and printed as `[REPORT]`: the netbanking
-failure rate, the hard/transient split within business declines, and the censoring
-breakdown. There is no published figure worth quoting for any of them. Grading them
-would mean inventing a band and then tuning the world until it hit — which is how a
-simulator stops being evidence of anything.
+Six checks are deliberately **ungraded** and printed as `[REPORT]`: the netbanking
+failure rate, the hard/transient split within business declines, the censoring
+breakdown, and the three that decompose the observed-vs-censored gap. There is no
+published figure worth quoting for any of them. Grading them would mean inventing a band
+and then tuning the world until it hit — which is how a simulator stops being evidence
+of anything. The file's own rule is **no band without a source**, and it is enforced by
+being cheaper to obey than to argue with: an ungraded check still prints its number.
 
 | Check | Measured | Band | Source |
 |---|---|---|---|
 | UPI Autopay failure rate | **11.79%** (n=18,735) | 8-15% | industry reporting on UPI Autopay mandates |
 | Card mandate failure rate | **2.75%** (n=9,100) | 2-3% | card e-mandate rates run far below UPI |
 | Netbanking failure rate | 8.72% (n=2,375) | *ungraded* | no citable published figure |
-| Technical declines / all declines | **17.38%** (n=4,286) | 14-22% | NPCI TD/BD taxonomy, ~18% technical |
-| Business declines / all declines | **82.62%** (n=4,286) | 78-86% | complement of the above |
-| Hard / business declines | 42.33% (n=3,541) | *ungraded* | finer than NPCI's own split |
+| Technical declines / all declines | **17.38%** (n=4,184) | 14-22% | NPCI TD/BD taxonomy, ~18% technical |
+| Business declines / all declines | **82.62%** (n=4,184) | 78-86% | complement of the above |
+| Hard / business declines | 43.36% (n=3,457) | *ungraded* | finer than NPCI's own split |
 | UPI balance failures across salary cycle | **6.77% → 15.05% (2.2×)** | ≥ 2.0× | mechanism, must be learnable |
 | Cards feel the cycle less than UPI | **card 1.3× vs UPI 2.2×** | card < UPI | a credit line absorbs what an empty account cannot |
-| Technical declines in peak hours | **1.97% → 5.42%** | peak > off-peak | OC-215-A rations peak because peak is congested |
+| Technical declines in peak hours | **1.97% → 5.73%** | peak > off-peak | OC-215-A rations peak because peak is congested |
 | Recoveries after a hard decline | **0 of 1,109** | exactly 0 | revoked / expired / closed are terminal |
-| Observed vs censored `p(success)` | **58.2% vs 75.6%** | differ ≥ 3pp | the filters select on outcome-correlated variables |
+| Censored retries, by reason | 786 rows: value floor 531, rail 255 | *ungraded* | a count, not a rate |
+| Observed vs censored `p(success)` | **58.2% vs 61.8%** | differ ≥ 3pp | the filters select on outcome-correlated variables |
+| …how much of that gap is mix | per attempt: 72.0/75.5 · 36.7/38.2 · 14.6/10.5 | *ungraded* | most of it; see §03 |
+| …what the ₹500 floor is worth | 92.1% vs 91.1% (+1.0pp, n=5,688/24,522) | *ungraded* | measured on first charges, which no filter touches |
+| …what the rail exclusion is worth | 91.7% vs 88.3% (+3.4pp, n=2,375/18,735) | *ungraded* | same, for netbanking vs UPI Autopay |
 | Population straddles ₹500 / ₹2,000 / ₹15,000 | 962/3,038 · 2,431/1,569 · 3,768/232 | ≥ 20 each side | every threshold must be exercised |
 | Cohorts ordered in time | train ≤ 2026-01-24, test ≥ 2026-04-25 | strict order | no leakage backwards |
 
+**One graded check now sits near its edge, and it is the interesting one.** The
+observed-vs-censored gap reads 3.6 points against a ≥3-point band. Earlier in the build
+it read 17.4 points, and that was an artefact: shadow retries were being scheduled by a
+different code path from real ones, so the two slices were not comparable populations.
+Fixing that (§06, pass 3) collapsed the gap to something close to parity. The band was
+**not** lowered to accommodate it. Instead the three decomposition rows above were added,
+because a single marginal-rate check was the wrong instrument for the claim being made:
+the selection bias here lives in the covariates, and a check on the marginal cannot see
+it. If that check ever fails, the correct response is to read §03 and the calibration
+result in `EVALUATION.md` §06 — not to touch the band.
+
 ## 06 — Every tuning pass, in full
 
-There have been two. Both are recorded here, including the one that revealed the first
-had been partly wrong, because a simulator whose fitting history is undisclosed is not
-evidence — it is a number generator with a citation list.
+Two passes moved constants, and a third moved none but re-froze the dataset anyway. All
+three are recorded here, including the one that revealed the first had been partly wrong,
+because a simulator whose fitting history is undisclosed is not evidence — it is a number
+generator with a citation list.
 
 **The governing rule, in both passes: a constant must be mechanistically justifiable
 independently of the number it was aimed at.** If it can only be defended by its target,
@@ -235,9 +282,38 @@ pinned at zero would satisfy that assertion trivially. So a separate test
 (`test_a_card_still_feels_the_cycle_in_the_same_direction`) asserts cards still track the
 cycle in the same direction — flatter, not flat.
 
+### Pass 3 — no constant moved, and the headline number halved anyway
+
+Two generator bugs were found on Day 4, both by tests written for the *model* rather than
+for the world. Neither touched a world constant; both changed which rows exist. The
+fingerprint went from `f04fd87f6eb050fa` to `c32b2b063cd87707`, attempts from 34,764 to
+33,866, and censored attempts from 1,686 to 786.
+
+**The shadow schedule ran a different control flow from the real one.** The observed
+branch stops presenting debits at the first capture, because a merchant who has been paid
+does not keep debiting. The censored branch did not: it materialised the whole
+counterfactual schedule unconditionally, so an invoice whose shadow retry #2 captured
+still got shadow retries #3 and #4 — attempts nobody would ever have made, drawn under
+exactly the conditions that had just succeeded. That is what produced the
+**75.6% vs 58.2%** observed-vs-censored gap this document reported until Day 4. It was
+not a finding about the legacy filters; it was an artefact of two code paths that were
+supposed to be the same policy. With the branch corrected, the honest gap is 3.6 points,
+and §03 is what replaced the paragraph that quoted the old one.
+
+**A retry could precede the charge it was retrying.** The urgent branch fires at 11:30
+IST with a T+0 offset, so an invoice charged at 15:00 got its "same-day" retry at 11:30
+that morning — three and a half hours before the failure it was responding to. 122
+attempts dataset-wide. `retry_schedule` now rolls a slot forward whole days until it is
+strictly after both the charge and the previous retry, which is what a fixed-hour cron
+actually does: it picks the failure up on its next run.
+
+Both are written up in `WHAT_BROKE.md`. The reason they belong in *this* section as well
+is that §06 exists to disclose everything that moved the numbers, and "we fixed a bug"
+moves them exactly as much as "we changed a constant" does.
+
 ## 07 — What the worklist contains
 
-The 157 at-risk invoices were not curated; they are what the legacy policy left behind.
+The 155 at-risk invoices were not curated; they are what the legacy policy left behind.
 They contain one of every case the compliance layer exists to handle, which is why the
 Day-6 demo runs on real rows rather than a fixture:
 
@@ -247,9 +323,9 @@ Day-6 demo runs on real rows rather than a fixture:
 | Attempt budget exhausted | 5 | `inv_0488_03`, 4 of 4 used | the 5th attempt is **blocked** — the demo's proof shot |
 | Consent withdrawn or DND | 24 | `inv_0132_09` (withdrawn) | every nudge channel blocked regardless of model score |
 | Hard decline | 32 | `inv_0190_13`, `card_expired` | re-register the mandate; retrying is known-futile |
-| Budget remaining, transient | 125 | — | the actual recovery opportunity |
+| Budget remaining, transient | 123 | — | the actual recovery opportunity |
 
-Distribution of remaining budget: 129 invoices with 3 attempts left, 15 with 2, 8 with 1,
+Distribution of remaining budget: 130 invoices with 3 attempts left, 12 with 2, 8 with 1,
 and 5 with none. The categories overlap on purpose — `inv_2757_03` is ₹24,772 *and*
 consent-withdrawn, and an invoice that trips two rules is where a guardrail composed of
 independent gates is worth more than a decision tree.
@@ -262,8 +338,11 @@ independent gates is worth more than a decision tree.
 | Card mandate | 1,087 | ₹102 | ₹3,833 | ₹57,501 |
 | Netbanking | 402 | ₹100 | ₹3,286 | ₹46,528 |
 
-Attempts by number: 30,210 first charges, then 2,536 / 1,104 / 914 retries. The taper is
-the dunning funnel — most invoices are settled or abandoned before the budget runs out.
+Attempts by number: 30,210 first charges, then **1,973 / 543 / 354** observed retries and
+**562 / 138 / 86** censored ones. The taper is the dunning funnel — most invoices are
+settled or abandoned before the budget runs out — and it appears in both slices because
+the counterfactual schedule stops at the first shadow capture exactly as the real one
+does (§06, pass 3).
 
 Amounts are spread so that **every threshold the compliance layer knows about is
 exercised on both sides**: the ₹500 legacy value floor (962 below / 3,038 above), the
@@ -279,7 +358,7 @@ headline claim is "measured money recovered across a batch"; resting it on 24 in
 would have produced a paired bootstrap interval wide enough to cover all four arms, which
 is a result that cannot distinguish the submission from the baseline it is meant to beat.
 
-At 4,000 the same cohort holds **196 observed retries and 237 recovery opportunities** —
+At 4,000 the same cohort holds **194 observed retries and 237 recovery opportunities** —
 roughly ten times the evidence, for 2.3 seconds of generation. The cost of finding this
 on Day 5 instead of Day 4 would have been the entire evaluation.
 

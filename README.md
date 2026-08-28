@@ -53,7 +53,7 @@ tool without an approval from it on record — enforced through the Agent SDK's
 
 ## 04 — Status
 
-Day 4 of 10 (26 Aug → 5 Sep 2026). **316 tests passing, 99% coverage on `compliance/`.**
+Day 4 of 10 (26 Aug → 5 Sep 2026). **360 tests passing, 99% coverage on `compliance/`.**
 
 | | |
 |---|---|
@@ -61,8 +61,8 @@ Day 4 of 10 (26 Aug → 5 Sep 2026). **316 tests passing, 99% coverage on `compl
 | ✅ | Append-only audit trail — enforced by grants *and* triggers, 20 passing tests |
 | ✅ | Six compliance rules + the composing guardrail — pure functions, written test-first |
 | ✅ | Live-lane spike — all 11 probes resolved, no unknowns carried forward ([findings](docs/LIVE_LANE_FINDINGS.md)) |
-| ✅ | World simulator + counterfactual oracle — dataset **frozen** at `f04fd87f6eb050fa`, 4,000 mandates / 34,764 attempts, realism gate 13 PASS / 3 ungraded / 0 FAIL ([data](docs/DATA.md)) |
-| ⬜ | Calibrated model (Day 4) |
+| ✅ | World simulator + counterfactual oracle — dataset **frozen** at `c32b2b063cd87707`, 4,000 mandates / 33,866 attempts, realism gate 13 PASS / 6 ungraded / 0 FAIL ([data](docs/DATA.md)) |
+| ✅ | Calibrated model **v1 frozen** — sigmoid chosen out-of-fold, isotonic disqualified for asserting certainty; test ECE **0.034** where the merchant had data and **0.442** where it did not, and it still ranks correctly there ([evaluation](docs/EVALUATION.md)) |
 | ⬜ | Four-arm paired evaluation (Day 5) |
 | ⬜ | Agent orchestrator + Razorpay MCP (Day 6) |
 | ⬜ | Dashboard (Days 7–8) |

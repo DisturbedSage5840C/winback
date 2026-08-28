@@ -403,6 +403,37 @@ def check_censoring(dataset: Dataset) -> list[Check]:
     one. If the two slices had the same success rate, the biased-legacy-policy story
     would be decoration and the observed-vs-censored calibration split in
     docs/EVALUATION.md would be measuring nothing.
+
+    **The pooled comparison is weaker than it looks, and the breakdown says so.** Both
+    slices stop at their first capture, so a third retry only exists where the second
+    one failed and the survivors on each side are the hard cases. What is left of the
+    pooled gap is then mostly *mix* — the censored slice is proportionally richer in
+    second attempts, which are the easy ones. Conditioned on attempt number the gap is
+    small, and the per-attempt table below is printed ungraded so that a reader cannot
+    take the pooled figure for more than it is.
+
+    Beside it the two filter variables are measured separately, on first charges, which
+    no filter touches. They are reported and **not** graded, and the reason is this
+    file's own rule rather than their values: there is no published figure for how far
+    a ₹500 boundary or a netbanking rail should move ``p(success)`` in India, so there
+    is no band to grade against, and inventing one would be the corroboration-shaped
+    mistake the module docstring warns about. An earlier draft of this function did
+    exactly that — it borrowed the 3pp band from the pooled check above and applied it
+    to each variable, which is a band with no source wearing a source's clothes.
+
+    What those two lines show is worth stating plainly, because it moves the argument:
+    the rail exclusion is a strongly informative filter, and **the ₹500 value floor
+    barely moves the outcome at all**. So the censoring in this world is not mainly a
+    shift in the marginal success rate. It is a shift in the *covariates* — the censored
+    region is cheap, netbanking, and early in a mandate's life, a combination the
+    observed data contains almost none of.
+
+    That is the sharper claim, and it is deliberately not graded here, because this file
+    can only see the simulator. Whether the censored region is one a model gets wrong is
+    a question about a model, and it is graded where the model is: ``ml/tests/`` asserts
+    the observed-versus-censored calibration gap, and ``docs/EVALUATION.md`` reports it.
+    A near-identical marginal success rate alongside a large calibration gap is not a
+    weaker result than the reverse would have been — it is the more interesting one.
     """
     censored = [a for a in dataset.attempts if not a.observed]
     observed_retries = [a for a in dataset.attempts if a.observed and a.attempt_number > 1]
@@ -447,6 +478,60 @@ def check_censoring(dataset: Dataset) -> list[Check]:
             ),
         )
     )
+
+    by_attempt = []
+    for number in (2, 3, 4):
+        obs = [a.p_success for a in observed_retries if a.attempt_number == number]
+        cen = [a.p_success for a in censored if a.attempt_number == number]
+        if obs and cen:
+            by_attempt.append(
+                f"#{number}: {100 * mean(obs):.1f}% vs {100 * mean(cen):.1f}% "
+                f"(n={len(obs):,}/{len(cen):,})"
+            )
+    checks.append(
+        Check(
+            name="  ...and how much of that gap is mix",
+            measured="observed vs censored, per attempt number",
+            expected="reported, not graded",
+            verdict=Verdict.UNGRADED,
+            note="  ".join(by_attempt),
+        )
+    )
+
+    # First charges are never censored — every invoice gets one — so this comparison
+    # is free of the survivorship that muddies the pooled retry figure above.
+    first = [a for a in dataset.attempts if a.attempt_number == 1]
+    amounts = {s.subscription_id: s.amount_paise for s in dataset.subscriptions}
+    methods = {s.subscription_id: s.method for s in dataset.subscriptions}
+    for label, below, above in (
+        (
+            "amount, across the ₹500 legacy floor",
+            [a.p_success for a in first if amounts[a.subscription_id] <= 500_00],
+            [a.p_success for a in first if amounts[a.subscription_id] > 500_00],
+        ),
+        (
+            "rail, netbanking vs UPI Autopay",
+            [a.p_success for a in first if methods[a.subscription_id] == "netbanking"],
+            [a.p_success for a in first if methods[a.subscription_id] == "upi_autopay"],
+        ),
+    ):
+        if len(below) < 30 or len(above) < 30:
+            note = f"too thin to compare: n={len(below)}/{len(above)}"
+        else:
+            low, high = 100 * mean(below), 100 * mean(above)
+            note = (
+                f"{low:.1f}% vs {high:.1f}%  ({low - high:+.1f}pp)  "
+                f"n={len(below):,}/{len(above):,}"
+            )
+        checks.append(
+            Check(
+                name=f"  ...what each filter variable is worth: {label}",
+                measured="first charges, which no filter touches",
+                expected="reported, not graded",
+                verdict=Verdict.UNGRADED,
+                note=note,
+            )
+        )
     return checks
 
 
@@ -783,15 +868,24 @@ def chart(dataset: Dataset, path: Path = ARTIFACT) -> Path:
 
     gap_width = total_retries * 0.006  # a surface gap, not a stroke around the marks
     left = 0.0
+    segments = []
     for reason, colour, note in (
         ("legacy_value_floor", "#e06c1f", "under ₹500"),
         ("legacy_rail_excluded", "#8b5cf6", "netbanking"),
     ):
         count = reasons[reason]
         ax.barh([0], [count], left=left, height=0.34, color=colour, zorder=2)
-        ax.text(left + count / 2, -0.28, f"{count:,}\n{note}", ha="center", va="top",
-                color=INK, fontsize=8.5, linespacing=1.5)
+        segments.append((count, colour, note))
         left += count + gap_width
+
+    # Labelled beside the bar, not under the segments. Both segments are narrow against
+    # an axis three thousand retries wide, so their centres sit a few hundred units
+    # apart and any centred label collides with its neighbour — which is what the first
+    # render of this panel did.
+    for offset, (count, colour, note) in zip((0.16, -0.16), segments, strict=True):
+        ax.scatter([left + total_retries * 0.018], [offset], s=26, color=colour, zorder=3)
+        ax.text(left + total_retries * 0.035, offset, f"{count:,}  {note}",
+                va="center", color=INK, fontsize=8.5)
 
     ax.set_yticks([1, 0])
     ax.set_yticklabels(
@@ -803,10 +897,13 @@ def chart(dataset: Dataset, path: Path = ARTIFACT) -> Path:
     seen_unseen = _censoring_gap(dataset)
     if seen_unseen is not None:
         seen, unseen = seen_unseen
+        # Not "the suppressed ones are easier". They are barely different, and saying
+        # so is the finding: a merchant watching their recovery rate would see nothing
+        # wrong, because nothing is wrong with the rate.
         caption += (
-            f" — and the oracle puts the suppressed ones at\n{unseen:.0f}% success "
-            f"against {seen:.0f}% for the ones that happened, so the bias is on "
-            "the outcome itself"
+            f" — and the suppressed ones are not\nthe easier ones: {unseen:.0f}% oracle "
+            f"success against {seen:.0f}%, most of that attempt-number mix.\n"
+            "The bias is in the covariates — cheap, netbanking, early — not in the rate."
         )
     ax.annotate(
         caption, xy=(0, -0.21), xycoords="axes fraction", fontsize=8.5,
@@ -820,7 +917,7 @@ def chart(dataset: Dataset, path: Path = ARTIFACT) -> Path:
     _panel_title(
         ax,
         f"The legacy policy hid {len(censored) / total_retries:.0%} of its own retries",
-        "Selection bias on amount and rail — both of which move p(success)",
+        "Selection bias on amount and rail — rail worth +3.4pp, the ₹500 floor +1.0pp",
     )
 
     summary = dataset.summary()

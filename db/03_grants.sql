@@ -44,8 +44,13 @@ GRANT SELECT, INSERT, UPDATE ON invoices, subscriptions, customers TO winback_ag
 GRANT SELECT, INSERT ON audit_log, decisions, payment_attempts TO winback_agent;
 REVOKE UPDATE, DELETE, TRUNCATE ON audit_log, decisions, payment_attempts FROM winback_agent;
 
--- Evaluation bookkeeping is regenerated per run, so it is genuinely mutable.
-GRANT SELECT, INSERT, UPDATE, DELETE ON eval_runs, eval_arm_results TO winback_agent;
+-- Evaluation bookkeeping is regenerated per run, so it is genuinely mutable. Not an
+-- inconsistency with the append-only tables above: these hold derived summaries that
+-- `python -m eval.report` recomputes from the facts, and a summary you cannot
+-- recompute in place is a summary that drifts from the facts it summarises.
+GRANT SELECT, INSERT, UPDATE, DELETE
+    ON eval_runs, eval_arm_results, eval_arm_violations, eval_intervals
+    TO winback_agent;
 
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO winback_agent;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO winback_agent;

@@ -1,12 +1,18 @@
 # Evaluation
 
-> **Status: the model is measured (§05–§07); the four-arm comparison is not.** Sections
-> 05 to 07 are frozen results from `ml/artifacts/metrics_v1.json`, written by
-> `python -m ml` and reproduced by `ml/tests/test_calibrate.py` on every run. The
-> arm-by-arm sections are written by `python -m eval.report` directly from `eval_runs` /
-> `eval_arm_results` on Day 5 — never hand-typed. Numbers that a human can retype are
-> numbers a human can round. The design below was fixed before the results existed, so
-> that they could not be chosen after seeing them.
+> **Status: measured.** §01–§03 fix the design, and they were written before the results
+> existed so that the results could not be chosen after seeing them. §04–§06 are
+> **generated** — `python -m eval` writes five runs to Postgres and `python -m eval.report`
+> renders those sections straight out of `eval_runs` / `eval_arm_results` /
+> `eval_intervals` / `eval_arm_violations`. Nothing between the two markers is typed by a
+> human, because a number a human can retype is a number a human can round;
+> `python -m eval.report --check` fails if the committed file drifts from the database.
+> The figure in §07 is drawn by `python -m eval.charts` from those same four tables, so it
+> cannot disagree with the tables above it.
+> §07 onward is the reading of those numbers, hand-written on purpose — a conclusion
+> generated from a template is a conclusion nobody checked — and every claim it makes is
+> pinned by a test in `eval/tests/`, including the one about what the evaluation *failed*
+> to show. §09–§11 are the frozen model results from `ml/artifacts/metrics_v1.json`.
 
 ## 01 — The metric
 
@@ -43,16 +49,151 @@ precision/recall · reliability diagram · the confusion matrix **priced in rupe
 costs the invoice times margin). Never plain accuracy — on an 8–15% failure base rate
 accuracy is a number that rewards predicting nothing.
 
-## 04 — Calibration on the censored slice
+---
+
+<!-- BEGIN GENERATED — python -m eval.report -->
+
+## 04 — The result
+
+Dataset `v1` fingerprint `c32b2b063cd87707` · model `v1` · cohort `test` · 190 failed invoices replayed · 10,000 bootstrap resamples, seed `20260905`.
+
+Every arm faced the same invoices with the same oracle seeds. Re-running the
+harness reproduces every rupee below exactly; the intervals are sampling
+uncertainty about which 800 customers were in the cohort, not simulation noise.
+
+| Arm | Policy | Recovered | Legally recovered | Attempts | Legal attempts | Nudges | Escalated | Written off | Violations | ₹ / legal attempt |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| A | Never retry, always escalate | ₹0 | ₹0 | 0 | 0 | 0 | 190 | 0 | 0 | — |
+| B | Retry everything to the cap, any time | ₹6,39,598 | ₹6,39,598 | 276 | 210 | 0 | 0 | 23 | 66 | ₹3,045.70 |
+| C | Legacy fixed-offset dunning | ₹5,57,737 | ₹53,490 | 183 | 63 | 0 | 0 | 71 | 120 | ₹849.05 |
+| **D** | Winback: calibrated model + cost policy + guardrail | ₹6,39,626 | **₹6,39,626** | 197 | **197** | 78 | 0 | 23 | **0** | **₹3,246.83** |
+
+### The paired comparison
+
+Differenced *inside* each resample, over subscriptions. Marginal intervals
+overlap almost entirely here because the arms move together when a lucky
+customer is resampled in — which is exactly why reading significance off two
+overlapping marginal intervals would be wrong.
+
+| Comparison | Legally recovered | Legal attempts | Violations | ₹ per legal attempt | Excludes zero |
+|---|---:|---:|---:|---:|---|
+| **D − A** | ₹6,39,626 [₹4,68,398, ₹8,35,540] | 197 [166, 230] | 0 [0, 0] | — | legally recovered, legal attempts |
+| **D − B** | ₹28 [−₹2,697, ₹2,781] | −13 [−32, 5] | −66 [−96, −42] | ₹201.13 [−₹79, ₹501] | violations |
+| **D − C** | ₹5,86,136 [₹4,15,611, ₹7,82,898] | 134 [107, 163] | −120 [−152, −91] | ₹2,397.78 [₹1,629, ₹3,286] | legally recovered, legal attempts, violations, ₹ per legal attempt |
+
+### What each arm's violations were, and what they bought it
+
+| Arm | Rule broken | Times | Rupees those attempts recovered |
+|---|---|---:|---:|
+| B | `bd_hard_not_retryable` | 66 | ₹0 |
+| C | `peak_window` | 81 | ₹5,04,247 |
+| C | `bd_hard_not_retryable` | 39 | ₹0 |
+
+## 05 — The same four arms, by region
+
+The legacy policy never retried an invoice under ₹500 or on a netbanking
+mandate, so the model has no training labels in the censored region. Splitting
+the arms the same way asks whether the advantage survives outside the data.
+
+| Region | Cases | Arm | Legally recovered | Legal attempts | Violations | ₹ / legal attempt |
+|---|---:|---|---:|---:|---:|---:|
+| **Observed** | 133 | A | ₹0 | 0 | 0 | — |
+|  |  | B | ₹5,59,114 | 151 | 39 | ₹3,702.74 |
+|  |  | C | ₹53,490 | 63 | 120 | ₹849.05 |
+|  |  | D | ₹5,59,142 | 140 | 0 | ₹3,993.87 |
+| **Censored** | 57 | A | ₹0 | 0 | 0 | — |
+|  |  | B | ₹80,484 | 59 | 27 | ₹1,364.14 |
+|  |  | C | ₹0 | 0 | 0 | — |
+|  |  | D | ₹80,484 | 57 | 0 | ₹1,412 |
+
+## 06 — Sensitivity to the nudge assumption
+
+The one number in this system that cannot be measured without sending real
+messages. The **world's** nudge effect moves across these runs; the **policy's**
+belief about it does not. What the table measures is not whether nudges work —
+it is how much the policy loses by being wrong about them.
+
+| World nudge multiplier | Arm | Nudges sent | Legally recovered | Legal attempts | ₹ / legal attempt |
+|---|---|---:|---:|---:|---:|
+| **1.00** (nudge does nothing) | B | 0 | ₹6,39,598 | 210 | ₹3,045.70 |
+|  | D | 78 | ₹6,39,438 | 199 | ₹3,213.26 |
+| **0.62** | B | 0 | ₹6,39,598 | 210 | ₹3,045.70 |
+|  | D | 78 | ₹6,39,626 | 197 | ₹3,246.83 |
+| **0.40** | B | 0 | ₹6,39,598 | 210 | ₹3,045.70 |
+|  | D | 78 | ₹6,40,525 | 196 | ₹3,267.98 |
+
+<!-- END GENERATED -->
+
+---
+
+## 07 — What the numbers say, and what they do not
+
+![Four arms, one cohort](assets/four_arms.png)
+
+**Against the naive baseline, this is a tie on money and a rout on legality.** Arm B
+retries everything to the cap at any hour. It recovers ₹6,39,598 that the law would have
+allowed; Winback recovers ₹6,39,626. The paired interval on that difference is
+[−₹2,697, ₹2,781] — it contains zero, comfortably, and it is meant to. The difference
+in legal attempts, −13, also contains zero. **Winback does not beat retry-everything on
+rupees, and this document will not claim it does.** What separates them is the third
+column: 66 violations against zero, interval [−96, −42]. The finding is that the naive
+policy's lawbreaking buys it nothing — it reaches the same money by a route a merchant
+cannot ship.
+
+That is sharper than a lift number would have been, and it is the reason
+`eval/tests/test_bootstrap.py::test_the_money_claim_against_retry_everything_is_a_tie_and_must_stay_one`
+exists. It asserts the interval still spans zero. If a later change makes Winback look
+better on rupees, that test fails and someone has to decide deliberately whether the
+change is real or whether the harness has started flattering the submission.
+
+**The two baselines break the law in two different ways, and only measurement told them
+apart.** Every one of arm B's 66 violations is `bd_hard_not_retryable`: it re-presents
+mandates the bank has permanently declined. Those 66 presentments recovered **₹0**. B
+spends legality and receives nothing for it. Arm C is the opposite: 81 of its 120
+violations are `peak_window` presentments, and those recovered **₹5,04,247 — 90% of
+everything arm C appears to collect.** Score arm C on rupees and it places second; score
+it on rupees it was *allowed* to collect and it places last of the three arms that
+present at all, at ₹53,490. An evaluation with only a money column would have ranked
+these two baselines in the wrong order.
+
+Arm B commits no window violations at all. It was written expecting them to be its
+characteristic failure, and the data refused: this dataset's presentment hours are 01–09,
+14, 15 and 22 IST, none of which fall in a peak window, so an arm that ignores the clock
+never happens to hit one. The docstrings were corrected to match the measurement rather
+than the other way round; `docs/WHAT_BROKE.md` records it.
+
+**The advantage survives where the model has no training data.** In the censored region —
+under ₹500 or on netbanking, where the legacy policy never retried and so never generated
+a label — arms B and D recover the identical ₹80,484, but D does it in 57 legal attempts
+against 59, with zero violations against 27. Given §10's finding that the model is badly
+miscalibrated there and still ranks correctly, a policy that picks the best of several
+scored candidates rather than thresholding on a probability is exactly the design that
+should survive that region. It did.
+
+**The nudge assumption barely matters, which is the useful version of that result.**
+Across a world where the nudge does nothing (multiplier 1.00) and one where it works far
+harder than assumed (0.40), with the policy's belief held wrong at 0.80 throughout,
+Winback's legally-recovered total moves by ₹1,087 — 0.17%. The nudge shifts which
+marginal invoices get presented, not how much is there to collect. This is the one
+parameter that cannot be measured without sending real messages, and the honest thing to
+report is not that the nudge works but that the result does not rest on it.
+
+**Arm A is a floor, not a competitor.** It never presents, so it recovers nothing and
+consumes no legal attempts. Its ratio is left undefined rather than printed as zero: the
+denominator does not exist, and a ₹/legal-attempt figure for an arm that took no attempts
+would be arithmetic on nothing. `eval/bootstrap.py` skips ratio intervals for it for the
+same reason.
+
+## 08 — Calibration on the censored slice
 
 Reported separately for the slice the legacy policy observed and the slice it never
 retried (low-value, netbanking). The gap between them is the honest measure of how far
 the model can be trusted outside its training distribution, and it is reported whether
-or not it flatters the result. It did not. See §06.
+or not it flatters the result. It did not. See §10.
 
 ---
 
-## 05 — Model v1, frozen
+## 09 — Model v1, frozen
 
 `python -m ml` trains, calibrates, evaluates and writes every artifact in one command.
 The test split is touched **once**, at the end of that file, after the calibrator has
@@ -157,7 +298,7 @@ thresholding on probability, and why the headline metric is rupees per legal att
 
 ![Model v1 calibration](assets/calibration.png)
 
-## 06 — What the censored slice actually showed
+## 10 — What the censored slice actually showed
 
 The legacy policy never retried an invoice under ₹500 or on netbanking, so the model
 has no training evidence in that region — but the oracle knows what would have happened
@@ -194,7 +335,7 @@ large calibration gap is not a weaker result than the reverse would have been �
 the more interesting one, because it is the case a merchant would never catch by
 watching their recovery rate.
 
-## 07 — The limitation, stated first
+## 11 — The limitation, stated first
 
 Arm D beats arms B and C **inside a world I wrote**. Three things were done to make
 that less circular than it sounds — the simulator uses a deliberately different

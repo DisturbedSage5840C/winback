@@ -606,6 +606,145 @@ and no test in this repository will ever fail because a figure is unreadable.
 
 ---
 
+## 2026-08-28 · The uniqueness constraint that was wrong twice over
+
+**Believed.** `payment_attempts` was keyed `UNIQUE (invoice_id, attempt_number, run_id)`,
+written on Day 1 with the four-arm evaluation already in mind. One table for the
+observational history and the arm replays, separated by `run_id`.
+
+**Actually true.** Found while designing the harness, before a single arm row was written.
+Two independent faults in one line:
+
+1. **The arm is not in the key.** All four arms share a single `run_id` — that is what
+   makes them one comparable run. Arm B replaying invoice `inv_0007` attempt 2 and arm D
+   replaying the same invoice's attempt 2 are the same `(invoice_id, attempt_number,
+   run_id)`, so the second arm to write would have been rejected. The evaluation would
+   have failed on its first insert. Cheap, loud, and not the interesting half.
+2. **It enforced nothing on the history.** Postgres treats NULLs as distinct in a unique
+   constraint by default, so for observational rows — where `run_id IS NULL` — every row
+   compared unequal to every other. The table could have held two attempt 3s for the same
+   invoice and the constraint would have called it fine. The history is the training set;
+   a duplicate there is a silently doubled row inside a feature window, and nothing
+   downstream would have complained.
+
+The second fault is the one worth recording. It was invisible, it protected the most
+important table in the repository, and it would have stayed invisible because the
+constraint *looked* like it was doing its job.
+
+**Cost.** Twenty minutes, and a `docker compose down -v`. No data lost: the loader does not
+exist yet, so the database held only schema.
+
+**Changed.** `UNIQUE NULLS NOT DISTINCT (invoice_id, attempt_number, run_id, arm)`
+(Postgres 15+; the container is 17). The arm joins the key, and NULLs now compare equal, so
+the observational history is genuinely constrained to one row per
+`(invoice, attempt_number)` for the first time. Verified against the running container
+rather than against the editor — the IDE's SQL parser is a T-SQL one and flags
+`NULLS NOT DISTINCT` as a syntax error, which is a fact about the editor, not the schema.
+
+---
+
+## 2026-08-30 · The baseline broke a different law than the one I wrote it to break
+
+**Believed.** Arm B — "retry everything to the cap, any time" — was documented as the arm
+whose violations come from ignoring NPCI's execution window. Its docstring said so in as
+many words: *"the violations this arm commits are a consequence of retrying at the same
+time of day as the charge."*
+
+**Actually true.** B commits **zero** window violations, and the reason is structural. It
+retries at the hour the original charge was presented; the generator's presentment hours
+are 1–9, 14, 15 and 22 IST, none of which is inside 10:00–13:00 or 17:00–21:30. B inherits
+the charge's legality along with its hour. Every one of its 66 violations is
+`bd_hard_not_retryable`: it re-presents mandates that are revoked, closed or hard-declined,
+because "retry everything" never reads the decline reason.
+
+Found by printing the violation breakdown by `stop_reason` rather than by trusting the
+prose. The corrected story is better than the one I had written, and in two directions:
+
+- **B's 66 illegal presentments recovered exactly ₹0.** They were all on dead mandates,
+  which never pay. B does not trade legality for money; it spends legality and gets
+  nothing. That is a sharper indictment than "it retried at the wrong time".
+- **The window violations live in arm C**, where they were always going to: 81 of C's 120,
+  from the 11:30 IST urgent slot. And unlike B's, C's violations *do* pay — ₹504,247 of
+  the ₹557,737 C appears to recover, 90% of its total, arrives through presentments the
+  guardrail refuses. Hold C to the law and it recovers ₹53,490.
+
+So the two baselines fail in two different ways, and neither was arranged: B wastes legal
+budget on invoices that cannot pay, C books most of its revenue illegally.
+
+**Cost.** Fifteen minutes. Nothing downstream was wrong — the harness measured all of this
+correctly and had been reporting it since the first run; only my description of it was
+wrong, in a docstring that would have been read as a claim about the results.
+
+**Changed.** `eval/arms.py` docstrings for both B and C now state what the arms measurably
+do, with the mechanism, and mark it as found by running rather than by design. The general
+lesson is the one already in this file twice: **the code was right and the prose about the
+code was wrong**, and only looking at the output caught it.
+
+---
+
+## 2026-08-31 · Two tests passed for the wrong reason, and the reason was a no-op
+
+**Believed.** The tests that prove `eval/report.py` writes only its own block —
+`test_writing_replaces_only_the_block` and `test_rewriting_an_unchanged_file_is_a_no_op` —
+did `monkeypatch.setattr(report, "REGIONS", ())` so they would render just the headline
+table against the cheap `eval_test` run, and not the four optional runs.
+
+**Actually true.** The monkeypatch did nothing. `render()` was declared as
+`def render(run_id=HEADLINE, *, regions=REGIONS, sensitivity=SENSITIVITY)`, and a default
+argument is evaluated **once, when the function is defined**. By the time the test rebound
+the module attribute, `render` was already holding the original tuple. Both tests were
+quietly rendering the real `v1_observed` and `v1_censored` runs from the production rows —
+and passing, because those runs happen to exist.
+
+They would have kept passing until the day someone ran the suite against a database with
+only the test run in it, at which point two tests about *writing files* would have failed
+with a `LookupError` about a missing evaluation run. A green suite that is green for a
+reason you did not write is worse than a red one.
+
+Found by asking why the write tests were slower than the render tests that use the same
+fixture. They were doing four times the work.
+
+**Cost.** Twenty minutes, most of it spent confirming the tests were wrong rather than the
+code.
+
+**Changed.** `render()` now takes `regions=None` / `sensitivity=None` and resolves the
+module constants inside the body, so the monkeypatch reaches it. More usefully, the two
+helpers underneath — `_region_table` and `_sensitivity_table` — were changed to take
+their runs as a **required** parameter with no default at all. The trap cannot recur in
+this module, because there is no longer a default to capture. The general lesson: a
+mutable-looking module constant used as a default argument is a snapshot, not a reference,
+and a test that patches one is testing nothing.
+
+---
+
+## 2026-08-31 · A zero-width bar still draws its edge
+
+**Believed.** The recovery panel of `docs/assets/four_arms.png` draws each arm's legal
+recovery as a solid bar and its illegal recovery as a hatched one beside it. Arms A, B and
+D recovered nothing illegally, so their hatched segment has width zero and therefore
+draws nothing.
+
+**Actually true.** Matplotlib draws the *edge* of a zero-width bar. Three arms that have
+never broken a rule each carried a thin red tick at the origin — in a panel whose entire
+point is that only arm C recovers money illegally. The figure was making the opposite of
+its own argument, in the reserved status colour.
+
+Three more defects in the same render, all of the same kind: the first panel's legend sat
+on top of arm D's bar and its value label; the third panel was mostly white space, because
+two forest-plot rows were given the same axes height as four bars.
+
+**Cost.** Ten minutes, and only because the procedure says to open the PNG. The validator
+had already passed the palette on all six checks — it grades colour, not layout, and it
+cannot see a red tick that should not be there.
+
+**Changed.** The illegal series is now filtered to the arms with a non-zero value before
+it is drawn at all, rather than drawn at zero width; `_legend` takes a `loc`; the figure
+uses `height_ratios=[1.0, 1.0, 0.62]`. This is the third entry in this file about a chart
+defect that no test would ever have caught, and the reason "render it and look at it" is a
+step and not a suggestion.
+
+---
+
 ## Open
 
 - **S2S Recurring activation** — assumed unavailable. If it is granted, the live lane

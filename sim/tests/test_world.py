@@ -131,9 +131,7 @@ def test_the_action_is_part_of_the_question() -> None:
 
 
 def test_the_attempt_number_is_part_of_the_question() -> None:
-    assert oracle_key(MANDATE, replace(CONTEXT, attempt_number=3)) != oracle_key(
-        MANDATE, CONTEXT
-    )
+    assert oracle_key(MANDATE, replace(CONTEXT, attempt_number=3)) != oracle_key(MANDATE, CONTEXT)
 
 
 def test_a_counterfactual_is_the_same_function_with_a_different_key() -> None:
@@ -159,9 +157,7 @@ def test_every_error_the_world_emits_is_one_production_can_classify() -> None:
     different places and could drift apart without anything failing.
     """
     for code, source, step, reason in world.all_error_tuples():
-        classify(
-            error_code=code, error_source=source, error_step=step, error_reason=reason
-        )
+        classify(error_code=code, error_source=source, error_step=step, error_reason=reason)
 
 
 def test_the_world_uses_only_known_source_reason_pairs() -> None:
@@ -178,9 +174,10 @@ def test_an_empty_account_is_transient_not_fatal() -> None:
     """
     code, source, step, reason = world._BALANCE_FAILURE
     assert reason == "insufficient_funds"
-    assert classify(
-        error_code=code, error_source=source, error_step=step, error_reason=reason
-    ) is RootCause.BD_TRANSIENT
+    assert (
+        classify(error_code=code, error_source=source, error_step=step, error_reason=reason)
+        is RootCause.BD_TRANSIENT
+    )
 
 
 def test_a_captured_attempt_carries_no_error() -> None:
@@ -193,11 +190,11 @@ def test_a_captured_attempt_carries_no_error() -> None:
             technical_base=(("upi_autopay", 0.0), ("card_mandate", 0.0), ("netbanking", 0.0)),
             balance_floor=0.0,
             balance_ceiling=0.0,
-            authorization_base=(
-                ("upi_autopay", 0.0), ("card_mandate", 0.0), ("netbanking", 0.0)
-            ),
+            authorization_base=(("upi_autopay", 0.0), ("card_mandate", 0.0), ("netbanking", 0.0)),
             death_hazard_per_cycle=(
-                ("upi_autopay", 1e-9), ("card_mandate", 1e-9), ("netbanking", 1e-9)
+                ("upi_autopay", 1e-9),
+                ("card_mandate", 1e-9),
+                ("netbanking", 1e-9),
             ),
         ),
     )
@@ -205,8 +202,11 @@ def test_a_captured_attempt_carries_no_error() -> None:
     assert outcome.error is None
     assert outcome.root_cause is None
     assert outcome.error_fields == {
-        "error_code": None, "error_source": None, "error_step": None,
-        "error_reason": None, "root_cause_class": None,
+        "error_code": None,
+        "error_source": None,
+        "error_step": None,
+        "error_reason": None,
+        "root_cause_class": None,
     }
 
 
@@ -249,9 +249,7 @@ def test_the_cycle_wraps_around_the_salary_day() -> None:
 def test_a_large_debit_bounces_more_than_a_small_one() -> None:
     small = replace(MANDATE, amount_paise=paise(149))
     large = replace(MANDATE, amount_paise=paise(4_999))
-    assert world.balance_hazard(CUSTOMER, small, SLOT) < world.balance_hazard(
-        CUSTOMER, large, SLOT
-    )
+    assert world.balance_hazard(CUSTOMER, small, SLOT) < world.balance_hazard(CUSTOMER, large, SLOT)
 
 
 def test_a_long_clean_history_lowers_the_balance_hazard() -> None:
@@ -334,6 +332,103 @@ def test_a_card_still_feels_the_cycle_in_the_same_direction() -> None:
     )
 
 
+# ------------------------------------------------------- the nudge
+
+# The one assumed constant in the world, so the tests here are about its *shape*
+# rather than its size: which hazard it touches, how long it lasts, and that it
+# cannot rescue a mandate that is already dead. The size is a stated assumption and
+# docs/EVALUATION.md reports the arm results across a range of it instead.
+
+
+def test_a_nudge_lowers_the_balance_hazard_and_only_the_balance_hazard() -> None:
+    """A message can make a customer top up. It cannot restart a bank."""
+    nudged_at = SLOT - timedelta(hours=12)
+    context = replace(CONTEXT, nudged_at=nudged_at)
+
+    quiet = hazards(CUSTOMER, MANDATE, CONTEXT)
+    told = hazards(CUSTOMER, MANDATE, context)
+
+    assert told.balance < quiet.balance
+    assert told.technical == quiet.technical
+    assert told.authorization == quiet.authorization
+
+
+def test_the_nudge_effect_expires() -> None:
+    """Beyond the window the customer has either topped up or has not, and the
+    message is no longer the reason either way."""
+    params = WorldParams()
+    inside = world.balance_hazard(
+        CUSTOMER, MANDATE, SLOT, nudged_at=SLOT - timedelta(hours=params.nudge_effect_hours)
+    )
+    outside = world.balance_hazard(
+        CUSTOMER,
+        MANDATE,
+        SLOT,
+        nudged_at=SLOT - timedelta(hours=params.nudge_effect_hours + 1),
+    )
+    unnudged = world.balance_hazard(CUSTOMER, MANDATE, SLOT)
+
+    assert inside < unnudged
+    assert outside == unnudged
+
+
+def test_a_nudge_sent_after_the_debit_cannot_have_funded_it() -> None:
+    """Including one sent at the same instant. A zero-hour gap is the same mistake
+    with a rounding error hiding it."""
+    unnudged = world.balance_hazard(CUSTOMER, MANDATE, SLOT)
+    assert world.balance_hazard(CUSTOMER, MANDATE, SLOT, nudged_at=SLOT) == unnudged
+    assert (
+        world.balance_hazard(CUSTOMER, MANDATE, SLOT, nudged_at=SLOT + timedelta(hours=1))
+        == unnudged
+    )
+
+
+def test_a_nudge_does_not_resurrect_a_dead_mandate() -> None:
+    """BD_hard is an authorisation that no longer exists. Telling the customer about
+    an invoice does not re-register their mandate, and a world where it did would
+    teach the policy to spend messages on revoked mandates."""
+    dead_cycle = world.death_cycle(MANDATE) + 5
+    context = replace(CONTEXT, cycle_number=dead_cycle, nudged_at=SLOT - timedelta(hours=12))
+    outcome = resolve(CUSTOMER, MANDATE, context)
+    assert outcome.mechanism == world.MANDATE_DEAD
+    assert outcome.p_success == 0.0
+
+
+def test_the_nudge_is_not_in_the_oracle_key() -> None:
+    """So "the same retry, but they had been told" is one coin compared against two
+    thresholds, not two unrelated flips. Without this the measured value of a nudge
+    would be its effect plus the variance of a fresh draw, and at these hazard sizes
+    the second term is the larger one.
+    """
+    told = replace(CONTEXT, nudged_at=SLOT - timedelta(hours=12))
+    assert oracle_key(MANDATE, told) == oracle_key(MANDATE, CONTEXT)
+
+
+def test_a_nudge_can_flip_an_outcome_but_only_a_balance_one() -> None:
+    """The end-to-end statement, on the population a nudge is actually for: a large
+    debit against a thin account, late in the salary cycle, on a fresh mandate.
+
+    Over that population telling people recovers money, and every single invoice it
+    recovers is one that had failed for lack of funds — never a dead mandate, never a
+    bank that was down.
+    """
+    stretched = replace(CUSTOMER, monthly_headroom_paise=paise(2_000))
+    late = datetime(2026, 9, 28, 2, 0, tzinfo=IST)  # 27 days after payday
+    flipped = 0
+    for index in range(400):
+        mandate = replace(
+            MANDATE, subscription_id=f"sub_{index:04d}", amount_paise=paise(1_499), paid_count=0
+        )
+        context = replace(CONTEXT, invoice_id=f"inv_{index:04d}", cycle_number=2, execute_at=late)
+        quiet = resolve(stretched, mandate, context)
+        told = counterfactual(stretched, mandate, context, nudged_at=late - timedelta(hours=12))
+        if quiet.captured != told.captured:
+            assert not quiet.captured and told.captured
+            assert quiet.mechanism == world.BALANCE
+            flipped += 1
+    assert flipped > 0, "a nudge that never changes an outcome is not a mechanism"
+
+
 # ------------------------------------------------------- congestion and outages
 
 
@@ -384,7 +479,9 @@ def test_banks_differ_but_stay_put() -> None:
 def test_a_dead_mandate_never_succeeds() -> None:
     certain_death = WorldParams(
         death_hazard_per_cycle=(
-            ("upi_autopay", 0.999), ("card_mandate", 0.999), ("netbanking", 0.999)
+            ("upi_autopay", 0.999),
+            ("card_mandate", 0.999),
+            ("netbanking", 0.999),
         )
     )
     outcome = resolve(CUSTOMER, MANDATE, CONTEXT, certain_death)
@@ -465,7 +562,5 @@ def _certain_failure() -> WorldParams:
     scaling, which makes it the honest way to force a failure.
     """
     return WorldParams(
-        authorization_base=(
-            ("upi_autopay", 1.0), ("card_mandate", 1.0), ("netbanking", 1.0)
-        )
+        authorization_base=(("upi_autopay", 1.0), ("card_mandate", 1.0), ("netbanking", 1.0))
     )

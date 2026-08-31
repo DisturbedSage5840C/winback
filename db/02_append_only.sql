@@ -92,6 +92,10 @@ BEGIN
     ALTER TABLE decisions         DISABLE TRIGGER decisions_no_mutate;
     ALTER TABLE payment_attempts  DISABLE TRIGGER payment_attempts_no_mutate;
 
+    -- Children before parents: eval_intervals and eval_arm_violations both point
+    -- at eval_arm_results, which points at eval_runs.
+    DELETE FROM eval_intervals;
+    DELETE FROM eval_arm_violations;
     DELETE FROM eval_arm_results;
     DELETE FROM eval_runs;
     DELETE FROM audit_log;

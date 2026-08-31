@@ -160,7 +160,13 @@ CREATE TABLE payment_attempts (
     -- An unobserved row without a reason is an unexplained hole in the training
     -- data, and an observed row with one is a contradiction. Neither may exist.
     CHECK (observed = (censoring_reason IS NULL)),
-    UNIQUE (invoice_id, attempt_number, run_id)
+    -- Four arms share one run_id, so the arm has to be in the key or the second arm
+    -- to replay an invoice collides with the first. NULLS NOT DISTINCT because
+    -- Postgres otherwise treats every NULL as its own value, which would have let
+    -- the observational history hold two attempt 3s for the same invoice and called
+    -- the constraint satisfied. The history is the training set; a duplicate there
+    -- is a silently doubled row in a feature window.
+    UNIQUE NULLS NOT DISTINCT (invoice_id, attempt_number, run_id, arm)
 );
 
 CREATE INDEX ON payment_attempts (invoice_id);
@@ -271,38 +277,106 @@ CREATE INDEX ON audit_log (ts_utc DESC);
 
 -- ---------------------------------------------------------------- evaluation
 CREATE TABLE eval_runs (
-    run_id           TEXT PRIMARY KEY,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    model_version    TEXT NOT NULL,
-    dataset_version  TEXT NOT NULL,
-    seed             BIGINT NOT NULL,
-    cohort           TEXT NOT NULL CHECK (cohort IN ('train', 'calibrate', 'test')),
-    notes            TEXT
+    run_id              TEXT PRIMARY KEY,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    model_version       TEXT NOT NULL,
+    dataset_version     TEXT NOT NULL,
+
+    -- The dataset's content hash. dataset_version is a name and a name can be
+    -- reused; this is the number that says the evaluation ran on the same rows.
+    dataset_fingerprint TEXT NOT NULL,
+
+    seed                BIGINT NOT NULL,
+    bootstrap_resamples INT,
+    cohort              TEXT NOT NULL CHECK (cohort IN ('train', 'calibrate', 'test')),
+
+    -- The two parameter sets the numbers are conditional on, stored rather than
+    -- described. The nudge-uplift sensitivity table in docs/EVALUATION.md is
+    -- several runs differing only in world_params, and telling them apart from
+    -- prose would not be possible.
+    world_params        JSONB,
+    policy_params       JSONB,
+
+    notes               TEXT
 );
 
 CREATE TABLE eval_arm_results (
-    run_id                   TEXT NOT NULL REFERENCES eval_runs(run_id),
-    arm                      TEXT NOT NULL CHECK (arm IN ('A', 'B', 'C', 'D')),
-    arm_label                TEXT NOT NULL,
+    run_id                    TEXT NOT NULL REFERENCES eval_runs(run_id),
+    arm                       TEXT NOT NULL CHECK (arm IN ('A', 'B', 'C', 'D')),
+    arm_label                 TEXT NOT NULL,
 
-    invoices_evaluated       INT NOT NULL,
-    recovered_paise          BIGINT NOT NULL,
-    attempts_consumed        INT NOT NULL,
-    legal_attempts_consumed  INT NOT NULL,
-    nudges_sent              INT NOT NULL,
-    escalations              INT NOT NULL,
-    written_off              INT NOT NULL,
-    compliance_violations    INT NOT NULL,
+    invoices_evaluated        INT NOT NULL,
+    invoices_recovered        INT NOT NULL,
+
+    -- Two recovery totals, and the gap between them is an argument. An arm that
+    -- collects inside a peak window did collect the money; it just did not collect
+    -- it legally, and a merchant cannot ship the difference.
+    recovered_paise           BIGINT NOT NULL,
+    compliant_recovered_paise BIGINT NOT NULL,
+
+    attempts_consumed         INT NOT NULL,
+    legal_attempts_consumed   INT NOT NULL,
+    nudges_sent               INT NOT NULL,
+    escalations               INT NOT NULL,
+    written_off               INT NOT NULL,
+    compliance_violations     INT NOT NULL,
 
     -- The headline metric. Not raw rupees recovered: a policy that recovers more
     -- by breaking the retry cap has not won anything a merchant can actually ship.
-    paise_per_legal_attempt  NUMERIC(14,2),
+    -- NULL, not zero, for an arm that never presented — see arm A.
+    paise_per_legal_attempt   NUMERIC(14,2),
 
-    -- Paired bootstrap over subscriptions (same oracle seeds across arms).
-    ci_low_paise             BIGINT,
-    ci_high_paise            BIGINT,
+    PRIMARY KEY (run_id, arm),
 
-    PRIMARY KEY (run_id, arm)
+    CONSTRAINT compliant_is_a_subtotal
+        CHECK (compliant_recovered_paise <= recovered_paise),
+    CONSTRAINT violations_are_the_attempts_the_guardrail_refused
+        CHECK (attempts_consumed - legal_attempts_consumed = compliance_violations)
+);
+
+-- Why each arm's violations happened, and what they bought it. The whole reason
+-- this is a table rather than a count: "arm B broke the rule 66 times and
+-- recovered zero rupees doing it" is a different claim from "arm C broke it 120
+-- times and 90% of its revenue came from those attempts", and the aggregate
+-- column cannot tell them apart.
+CREATE TABLE eval_arm_violations (
+    run_id          TEXT NOT NULL,
+    arm             TEXT NOT NULL,
+    stop_reason     TEXT NOT NULL,
+    violations      INT NOT NULL,
+    recovered_paise BIGINT NOT NULL,
+
+    PRIMARY KEY (run_id, arm, stop_reason),
+    FOREIGN KEY (run_id, arm) REFERENCES eval_arm_results(run_id, arm)
+);
+
+-- Paired cluster bootstrap over subscriptions. One row per (arm, statistic,
+-- comparison): the marginal interval for the arm, and the D-minus-arm gap
+-- differenced inside each resample.
+--
+-- Normalised rather than widened into eval_arm_results because there are four
+-- statistics and two comparisons, and because a schema with ci_low_recovered,
+-- ci_low_attempts, ci_low_ratio... invites exactly the copy-paste error that
+-- would put one statistic's interval beside another's point estimate.
+CREATE TABLE eval_intervals (
+    run_id      TEXT NOT NULL,
+    arm         TEXT NOT NULL,
+    statistic   TEXT NOT NULL,
+
+    -- 'marginal' = this arm alone. 'versus_winback' = arm D minus this arm,
+    -- which is the only one of the two that answers "is D better".
+    comparison  TEXT NOT NULL CHECK (comparison IN ('marginal', 'versus_winback')),
+
+    point       NUMERIC(18,4) NOT NULL,
+    ci_low      NUMERIC(18,4) NOT NULL,
+    ci_high     NUMERIC(18,4) NOT NULL,
+    resamples   INT NOT NULL,
+    confidence  NUMERIC(4,3) NOT NULL,
+
+    PRIMARY KEY (run_id, arm, statistic, comparison),
+    FOREIGN KEY (run_id, arm) REFERENCES eval_arm_results(run_id, arm),
+
+    CONSTRAINT interval_contains_its_point CHECK (ci_low <= point AND point <= ci_high)
 );
 
 -- ---------------------------------------------------------------- views

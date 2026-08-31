@@ -80,7 +80,10 @@ _TECHNICAL_FAILURES: tuple[tuple[ErrorTuple, float], ...] = (
 #: dominated by an empty account on the wrong day of the month, and that is a
 #: *transient* condition that clears on payday — not a dead mandate.
 _BALANCE_FAILURE: ErrorTuple = (
-    "BAD_REQUEST_ERROR", "customer", "payment_authorization", "insufficient_funds"
+    "BAD_REQUEST_ERROR",
+    "customer",
+    "payment_authorization",
+    "insufficient_funds",
 )
 
 _AUTHORIZATION_FAILURES: tuple[tuple[ErrorTuple, float], ...] = (
@@ -192,6 +195,31 @@ class WorldParams:
         ("netbanking", 0.90),
     )
 
+    # --- the nudge --------------------------------------------------------------
+    #: What telling the customer buys, expressed as a multiplier on the balance
+    #: hazard of a retry that follows the message inside ``nudge_effect_hours``.
+    #:
+    #: **This constant is an assumption, not a measurement, and it is the only one in
+    #: this file that is.** Every other number here is either a published figure or a
+    #: mechanism whose shape is checked against one. There is no public figure for the
+    #: incremental effect of a dunning message *holding the retry schedule fixed* —
+    #: the industry numbers for dunning recovery (commonly quoted around 15-30%) are
+    #: for the whole process, retries included, and attributing that to the message
+    #: alone would be doing exactly the thing this project keeps refusing to do.
+    #:
+    #: So it is isolated to one line, it moves only the hazard it could plausibly move,
+    #: and ``docs/EVALUATION.md`` reports the four-arm result at 1.00 (no effect at
+    #: all), at this value, and at 0.40 rather than at this value alone. If the ranking
+    #: of the arms depends on it, the honest report is that it depends on it.
+    #:
+    #: Why it multiplies *balance* and nothing else: a message can cause a customer to
+    #: move money into the account before the next presentment. It cannot restart a
+    #: bank, it cannot re-authorise a mandate, and it cannot resurrect a revoked one.
+    nudge_balance_multiplier: float = 0.62
+    #: How long the effect lasts. Beyond three days the customer has either topped up
+    #: or has not, and the message is no longer why.
+    nudge_effect_hours: float = 72.0
+
     # --- authorization (the rest of BD_transient) -------------------------------
     #: Per-rail authorization/limit failures, independent of balance.
     #:
@@ -279,6 +307,14 @@ class AttemptContext:
     #: When the most recent technical decline on this invoice happened, if any.
     #: Drives outage persistence. ``None`` means no TD yet.
     last_technical_failure_at: datetime | None = None
+    #: When the customer was last told this invoice had failed, if ever.
+    #:
+    #: Deliberately *not* part of the oracle key. A nudged retry and an unnudged one
+    #: at the same slot draw the same uniform and are compared against different
+    #: thresholds, so the difference between them is the nudge's effect on the same
+    #: coin rather than two unrelated flips. That is what makes "what did the nudge
+    #: buy us" a clean counterfactual instead of a variance measurement.
+    nudged_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -367,13 +403,15 @@ def oracle_key(mandate: Mandate, context: AttemptContext) -> str:
     not luck. Persisted to ``payment_attempts.oracle_seed`` so any row in the
     database can be replayed years later.
     """
-    return "|".join([
-        mandate.subscription_id,
-        context.invoice_id,
-        str(context.attempt_number),
-        context.action,
-        _slot_key(context.execute_at),
-    ])
+    return "|".join(
+        [
+            mandate.subscription_id,
+            context.invoice_id,
+            str(context.attempt_number),
+            context.action,
+            _slot_key(context.execute_at),
+        ]
+    )
 
 
 def _choose(u: float, catalogue: tuple[tuple[ErrorTuple, float], ...]) -> ErrorTuple:
@@ -414,6 +452,8 @@ def balance_hazard(
     mandate: Mandate,
     execute_at: datetime,
     params: WorldParams = DEFAULT_PARAMS,
+    *,
+    nudged_at: datetime | None = None,
 ) -> float:
     """The salary-cycle depletion curve. The signal the model has to find.
 
@@ -422,6 +462,11 @@ def balance_hazard(
     a history of clean payments, and finally scaled by how exposed the rail is to the
     account balance at all — a card mandate draws on credit, so most of this curve
     simply does not reach it.
+
+    A nudge delivered within ``nudge_effect_hours`` before this slot discounts the
+    result — see ``WorldParams.nudge_balance_multiplier``, which is the one assumed
+    constant in this world and is reported with a sensitivity analysis rather than
+    presented as a fact.
     """
     elapsed = days_since_salary(execute_at, customer.salary_day)
     depletion = 1 - math.exp(-elapsed / params.balance_tau_days)
@@ -436,6 +481,14 @@ def balance_hazard(
 
     reliability = min(mandate.paid_count, params.reliability_cycles) / params.reliability_cycles
     hazard *= 1 - params.reliability_discount * reliability
+
+    if nudged_at is not None:
+        # Strictly before, and inside the window. A message sent *after* the debit was
+        # presented cannot have funded the account it was presented against, and a
+        # zero-hour gap is that same mistake with a rounding error hiding it.
+        hours = (execute_at - nudged_at).total_seconds() / 3600
+        if 0 < hours <= params.nudge_effect_hours:
+            hazard *= params.nudge_balance_multiplier
 
     return min(hazard, 1.0)
 
@@ -494,7 +547,9 @@ def hazards(
     """Decompose one presentment into its independent failure hazards."""
     return Hazards(
         technical=technical_hazard(mandate, context, params),
-        balance=balance_hazard(customer, mandate, context.execute_at, params),
+        balance=balance_hazard(
+            customer, mandate, context.execute_at, params, nudged_at=context.nudged_at
+        ),
         authorization=params.authorization_rate(mandate.method),
         mandate_dead=is_mandate_dead(mandate, context.cycle_number, params),
     )
@@ -536,17 +591,13 @@ def resolve(
         )
 
     if _uniform("technical", key) < h.technical:
-        return finish(
-            TECHNICAL, _choose(_uniform("which_tech", key), _TECHNICAL_FAILURES)
-        )
+        return finish(TECHNICAL, _choose(_uniform("which_tech", key), _TECHNICAL_FAILURES))
 
     if _uniform("balance", key) < h.balance:
         return finish(BALANCE, _BALANCE_FAILURE)
 
     if _uniform("authorization", key) < h.authorization:
-        return finish(
-            AUTHORIZATION, _choose(_uniform("which_auth", key), _AUTHORIZATION_FAILURES)
-        )
+        return finish(AUTHORIZATION, _choose(_uniform("which_auth", key), _AUTHORIZATION_FAILURES))
 
     return AttemptOutcome(captured=True, mechanism=CAPTURED, p_success=h.p_success)
 
@@ -558,6 +609,7 @@ def counterfactual(
     *,
     action: str | None = None,
     execute_at: datetime | None = None,
+    nudged_at: datetime | None = None,
     params: WorldParams = DEFAULT_PARAMS,
 ) -> AttemptOutcome:
     """What *would* have happened under a different action or a different slot.
@@ -565,6 +617,10 @@ def counterfactual(
     The counterfactual an arm never took is exactly as well-defined as the one it
     did: same function, different key. This is the method by which "measured money
     recovered" becomes measurable at all in an environment that moves no real money.
+
+    ``nudged_at`` is the one override that changes the answer without changing the
+    key, which is what makes "the same retry, but the customer had been told" a
+    like-for-like comparison rather than a fresh draw.
     """
     return resolve(
         customer,
@@ -573,6 +629,7 @@ def counterfactual(
             context,
             action=action if action is not None else context.action,
             execute_at=execute_at if execute_at is not None else context.execute_at,
+            nudged_at=nudged_at if nudged_at is not None else context.nudged_at,
         ),
         params,
     )

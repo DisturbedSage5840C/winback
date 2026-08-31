@@ -4,7 +4,7 @@
 > here disagrees with the repo, the repo is right and this file is stale — say so and
 > it gets fixed in the same turn.
 
-**As of:** 31 August 2026 · **Plan day:** 5 of 10 complete · **Head:** `8d24a77`, pushed
+**As of:** 31 August 2026 · **Plan day:** 5 of 10 complete · **Head:** `e0ea78c`, pushed
 to `DisturbedSage5840C/winback` (private) · **Deadline:** 5 September 2026.
 
 **Calendar position: exactly on plan, and the two-day buffer was spent here on purpose.**

@@ -84,6 +84,34 @@ A `PostToolUse` hook handles audit-log append only.
 
 `max_turns` is capped per item so a confused loop stops rather than spending.
 
+**An approval is a single-use key, not a flag.** `compliance_guardrail` files each
+approval under exact coordinates — `invoice_id | action | execute_at` — and
+`execute_recovery` *pops* it. One guardrail call therefore authorises exactly one
+presentment, at exactly the slot it was granted for. A near-miss is a miss: approval for a
+13:40 slot is not approval for a 12:00 one, and the gate does no rounding, because a
+rounded timestamp is how a peak-window presentment gets through.
+
+**The audit trail is the checkpoint.** `audit_log` is append-only and keyed by `run_id`,
+so re-running the same `--run-id` resumes rather than restarting — there is no progress
+file that could disagree with the evidence. This is a correctness property before it is a
+convenience one: NPCI counts presentments, not batches, so a resume that redid its
+completed work would spend legal attempts to buy nothing. The resume query reads
+`audit_log` **and** `decisions`, because a conclusion is not always an action.
+
+**Every invoice leaves a row — including the ones nothing was done to.** Three paths write
+to `audit_log`, and only the first is a hook:
+
+| Path | Writes | Because |
+|---|---|---|
+| `PostToolUse` | Actions taken, and tool refusals | A tool ran, or refused to |
+| `record_conclusion` | Write-offs and escalations | They call no tool; the conclusion *is* the event |
+| `record_silence` | Invoices the agent left untouched | No tool ran at all; the absence is the event |
+
+Without the second, a batch that concluded 190 invoices wrote 156 rows and said nothing
+about the 34 where the answer was a rule. Without the third, an approval the agent
+obtained and never spent was indistinguishable from an invoice never opened. Both are
+recorded in [`WHAT_BROKE.md`](WHAT_BROKE.md).
+
 ## 04 — Roles
 
 | Role | Used by | Can |
@@ -95,7 +123,29 @@ A `PostToolUse` hook handles audit-log append only.
 A read-only dashboard cannot corrupt an audit trail even if the API has a bug. "Who is
 allowed to move money" is answerable from the database, not only from the code.
 
-## 05 — Layout
+## 05 — The read API
+
+FastAPI over `winback_reader`. Seven endpoints, all `GET`, and a test asserts that the
+set of HTTP verbs the app exposes is a subset of `{GET, HEAD}` — the grant is the
+enforcement, that test is the cheap second lock.
+
+| Endpoint | Source of truth |
+|---|---|
+| `/health` | `core.db.healthcheck` — row counts, not a bare `ok` |
+| `/runs` | `audit_log`, grouped. A run exists iff it wrote something unretractable |
+| `/runs/{id}/overview` | the `recovery_funnel` view, verbatim, plus a stop-reason breakdown |
+| `/runs/{id}/worklist` | `audit_log` ⋈ `exception_worklist` — what the run decided, per invoice |
+| `/worklist` | `exception_worklist` filtered to `at_risk` — the queue still outstanding |
+| `/invoices/{id}` | facts, every attempt, every decision with its full `candidate_set`, the trail |
+| `/evaluation` | the four `eval_*` tables — the same rows `EVALUATION.md` is generated from |
+
+**No number is computed here that the database can compute.** An API that recalculated
+the funnel would be a second implementation of the evaluation, free to disagree with
+`docs/EVALUATION.md`. So the handlers select and shape; they do not aggregate. Every
+query is a constant string with bound parameters, including the optional filters, so
+nothing a caller sends becomes SQL. Rupees leave as integer paise.
+
+## 06 — Layout
 
 ```
 winback/

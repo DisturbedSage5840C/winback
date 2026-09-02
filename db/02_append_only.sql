@@ -104,6 +104,10 @@ BEGIN
     DELETE FROM invoices;
     DELETE FROM subscriptions;
     DELETE FROM customers;
+    -- Last, and deliberately so: while the manifest row still exists, the database
+    -- can still say which world it was holding. Clearing it first would leave a
+    -- failed reload looking like a database that had never been loaded at all.
+    DELETE FROM world_manifest;
 
     ALTER TABLE audit_log         ENABLE TRIGGER audit_log_no_mutate;
     ALTER TABLE decisions         ENABLE TRIGGER decisions_no_mutate;

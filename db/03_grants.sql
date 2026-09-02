@@ -39,6 +39,11 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO winback_read
 -- subscription from pending -> active. These are current state, not history.
 GRANT SELECT, INSERT, UPDATE ON invoices, subscriptions, customers TO winback_agent;
 
+-- The manifest describes the current world rather than recording something that
+-- happened, so a reload replaces it. DELETE is granted for the same reason it is
+-- withheld above: this row is not history.
+GRANT SELECT, INSERT, UPDATE, DELETE ON world_manifest TO winback_agent;
+
 -- Immutable facts: INSERT and SELECT only. No UPDATE. No DELETE. The trigger in
 -- 02_append_only.sql is the belt; this is the braces.
 GRANT SELECT, INSERT ON audit_log, decisions, payment_attempts TO winback_agent;

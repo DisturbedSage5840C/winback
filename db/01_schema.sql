@@ -19,6 +19,36 @@ BEGIN;
 -- verbatim from Razorpay/NPCI docs and will change as those docs change. ALTER TYPE
 -- on a live enum is a worse migration than editing a CHECK.
 
+-- ---------------------------------------------------------------- world_manifest
+-- Which generated world this database is currently holding. Exactly one row.
+--
+-- The fingerprint is a property of the load, not of any customer, so it lives in one
+-- row rather than denormalised across 4,000 of them. Everything downstream that quotes
+-- a number -- docs/EVALUATION.md, the eval_runs rows, the dashboard -- is quoting it
+-- against one specific fingerprint, and sim/load.py::require_fingerprint() turns
+-- "is this the world those numbers came from?" into a query instead of an assumption.
+--
+-- Mutable, unlike every fact table below it: a reload replaces the world, and the row
+-- that describes the world is replaced with it.
+CREATE TABLE world_manifest (
+    singleton          BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (singleton),
+    dataset_version    TEXT NOT NULL,
+    dataset_fingerprint TEXT NOT NULL,
+
+    customers          INT NOT NULL CHECK (customers >= 0),
+    subscriptions      INT NOT NULL CHECK (subscriptions >= 0),
+    invoices           INT NOT NULL CHECK (invoices >= 0),
+    attempts           INT NOT NULL CHECK (attempts >= 0),
+    censored_attempts  INT NOT NULL CHECK (censored_attempts >= 0),
+
+    loaded_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CHECK (censored_attempts <= attempts)
+);
+
+COMMENT ON TABLE world_manifest IS
+    'One row describing the generated world currently loaded. Written by sim/load.py.';
+
 -- ---------------------------------------------------------------- customers
 CREATE TABLE customers (
     customer_id        TEXT PRIMARY KEY,
@@ -398,8 +428,16 @@ SELECT
 FROM audit_log
 GROUP BY run_id, arm;
 
--- Exception worklist: at-risk invoices ranked by rupees at risk, with the attempt
--- budget already computed. This is the query the worklist page runs.
+-- Exception worklist: invoices ranked by rupees at risk, with the attempt budget
+-- already computed. This is the query the worklist page runs.
+--
+-- It does NOT filter to `status = 'at_risk'`, and that is deliberate. It did once, and
+-- the consequence was that a run's worklist emptied itself the moment the run finished:
+-- the agent's own actions move an invoice to `recovered` or `written_off`, so joining a
+-- completed run against an at-risk-only view returns nothing at all. The page that
+-- exists to show what the batch decided would have shown a blank table after every
+-- successful batch. `invoice_status` is exposed instead, and the caller filters — the
+-- live queue on `at_risk`, the run drill-down on nothing.
 CREATE VIEW exception_worklist AS
 SELECT
     i.invoice_id,
@@ -409,6 +447,7 @@ SELECT
     s.method,
     s.bank,
     s.mcc_category,
+    i.status                                        AS invoice_status,
     i.amount_paise,
     i.charge_at,
     i.charge_at_ist,
@@ -432,9 +471,8 @@ FROM invoices i
 JOIN subscriptions s USING (subscription_id)
 JOIN customers c USING (customer_id)
 LEFT JOIN payment_attempts a USING (invoice_id)
-WHERE i.status = 'at_risk'
 GROUP BY i.invoice_id, i.subscription_id, s.customer_id, c.customer_hash,
-         s.method, s.bank, s.mcc_category, i.amount_paise, i.charge_at,
+         s.method, s.bank, s.mcc_category, i.status, i.amount_paise, i.charge_at,
          i.charge_at_ist, i.notice_sent_at, s.status, c.consent_status;
 
 COMMIT;

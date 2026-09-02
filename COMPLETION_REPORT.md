@@ -4,17 +4,23 @@
 > here disagrees with the repo, the repo is right and this file is stale — say so and
 > it gets fixed in the same turn.
 
-**As of:** 31 August 2026 · **Plan day:** 5 of 10 complete · **Head:** `e0ea78c`, pushed
-to `DisturbedSage5840C/winback` (private) · **Deadline:** 5 September 2026.
+**As of:** 2 September 2026 · **Plan day:** 6 of 10 complete · **Head:** `9494307`,
+pushed to `DisturbedSage5840C/winback` (private) · **Deadline:** 5 September 2026.
 
-**Calendar position: exactly on plan, and the two-day buffer was spent here on purpose.**
-Day 4 finished two days early. Day 5 was scheduled for 31 August and finished on
-31 August, so it consumed all of that buffer. That was the right place to spend it: the
-four-arm paired evaluation is the differentiator the whole submission rests on, and it
-produced a result that had to be argued with rather than accepted (§03). From here the
-plan runs with no slack — Day 6 starts tomorrow, 1 September, as scheduled.
+**Calendar position: one day behind, and the read-only backend from Day 7 is already
+done.** Day 6 was scheduled for 1 September and finished on 2 September — the agent layer
+took a day and a half, and four defects found in it (§03) were worth the extra half day
+rather than being carried into the demo. The slip is partly bought back: `api/main.py`
+and its 16 tests are Day 7's backend deliverable, finished today. What remains of Day 7
+and all of Day 8 is frontend, UI and design, which you have scoped as the next block of
+work.
 
-**Nothing is blocked on you right now.** Your first required action is on Day 9. The
+**One thing is waiting on a clock, not on either of us.** `batch_v2` — the re-run that
+demonstrates full audit coverage — halted at 50/190 on the Claude account's session
+limit, which resets at 7pm IST. It resumes with one command (§04). The Day-6 gate does
+not depend on it: `batch_v1` already completed all 190 unattended.
+
+**Nothing else is blocked on you right now.** Your first required action is on Day 9. The
 full list is in §05, with dates.
 
 ---
@@ -23,14 +29,15 @@ full list is in §05, with dates.
 
 | | |
 |---|---|
-| Tests | **465 passing**, 0 skipped, 0 xfail |
+| Tests | **603 passing**, 0 skipped, 0 xfail — 587 across `compliance` / `sim` / `ml` / `eval` / `core` / `agent`, 16 across `api` |
 | Coverage | **99%** on `compliance/` — the suite a panelist reads first |
 | Dataset | **frozen** at fingerprint `c32b2b063cd87707` — 4,000 mandates, 30,210 invoices, 33,866 attempts, 786 censored (2.3%) |
 | Realism gate | 19 checks — **13 PASS · 6 ungraded `[REPORT]` · 0 FAIL** |
 | Model | **v1 frozen** — XGBoost + sigmoid calibration, chosen out-of-fold, scored once on the held-out cohort |
 | Headline honesty number | test ECE **0.034** where the merchant had data, **0.442** where it did not, still correctly ordered there |
 | Headline result | **−66 compliance violations vs the naive baseline, CI [−96, −42]**, at ₹28 more legally recovered — a difference whose interval spans zero, and is reported as a tie |
-| Docs | 2,273 lines across 8 files, all committed |
+| Docs | 2,610 lines across 8 files, all committed — `WHAT_BROKE.md` alone is 1,181 |
+| Agent | full batch **190/190 unattended, exit 0**; live cohort carries real `plink_…` IDs |
 | Lint | `ruff check .` clean |
 
 The thesis has not moved, and as of today it is **measured** rather than asserted:
@@ -53,8 +60,8 @@ plan's own gate wording, and it is only ticked when the gate is actually met.
 | **3** | 29 Aug | Oracle + legacy policy + generator, dataset frozen, realism chart | ✅ | [`docs/DATA.md`](docs/DATA.md), [`docs/assets/realism.png`](docs/assets/realism.png) |
 | **4** | 30 Aug | Features + XGBoost + 3-way calibration, model v1 frozen, observed-vs-censored split | ✅ | [`docs/EVALUATION.md`](docs/EVALUATION.md) §05–§07, `ml/artifacts/metrics_v1.json`, [`docs/assets/calibration.png`](docs/assets/calibration.png) |
 | **5** | 31 Aug | Policy layer + four-arm paired harness + bootstrap CIs → `EVALUATION.md` | ✅ | [`docs/EVALUATION.md`](docs/EVALUATION.md) §04–§07, [`docs/assets/four_arms.png`](docs/assets/four_arms.png), `eval_runs` / `eval_arm_results` / `eval_arm_violations` / `eval_intervals` in Postgres |
-| **6** | 1 Sep | Agent SDK orchestrator, `can_use_tool` gate, PostToolUse audit, MCP mode switch, both adapters, full batch | ⬜ | — |
-| **7** | 2 Sep | FastAPI + Next.js — overview, worklist, drill-down on real data | ⬜ | — |
+| **6** | 1 Sep | Agent SDK orchestrator, `can_use_tool` gate, PostToolUse audit, MCP mode switch, both adapters, full batch | ✅ *(finished 2 Sep)* | `agent/` — `orchestrator`, `tools`, `gate`, `hooks`, `mcp_config`, `adapters/`; 112 tests. `batch_v1` **190/190 unattended, exit 0**; `live_v1` / `live_v2` carry real `plink_…` IDs; `decisions` + `audit_log` populated in Postgres |
+| **7** | 2 Sep | FastAPI + Next.js — overview, worklist, drill-down on real data | ◐ backend done | `api/main.py` — 7 read-only endpoints over `winback_reader`, 16 tests, no mocked data. Next.js is the frontend block, deliberately not started |
 | **8** | 3 Sep | Compliance panel + evaluation page + four animations; failure drill; rough-cut video — **MVP checkpoint** | ⬜ | — |
 | **9** | 4 Sep | Docs, fresh-clone `run_demo.sh`, final video, repo public, tagged release | ⬜ | — |
 | **10** | 5 Sep | Buffer, submit early | ⬜ | — |
@@ -63,9 +70,10 @@ Plan sections not tied to a single day, and their state:
 
 | Plan § | Subject | State |
 |---|---|---|
-| §1.1 | No "charge now" API → guarded path, two adapters | Decided in writing, adapter package scaffolded (`agent/adapters/`), implementations land Day 6 |
+| §1.1 | No "charge now" API → guarded path, two adapters | ✅ Done — `LiveRazorpayAdapter` and `SimulatedAdapter` behind one guardrail; `audit_log.execution_mode` records which ran, per row |
 | §1.2 | sklearn 1.9 `FrozenEstimator` calibration | ✅ Done — that is exactly how `ml/calibrate.py` fits |
-| §1.3 | `can_use_tool` as the hard gate, not a hook | Day 6. Guardrail it will call is already written and tested |
+| §1.3 | `can_use_tool` as the hard gate, not a hook | ✅ Done, and the plan's caution was right — `allowed_tools` auto-approves *before* `can_use_tool`, so the money tools are deliberately left out of it. An approval is a single-use key at exact coordinates, popped not read |
+| §6 | Agent layer, Claude Agent SDK | ✅ Done — four in-process MCP tools, `max_turns=6` per item, `setting_sources=[]`, `payment_link_notify` kept out of `allowed_tools` |
 | §3.1 | Deterministic counterfactual oracle | ✅ Done — seed excludes `run_id` and `arm`, so arms are genuinely paired |
 | §3.2 | Biased legacy policy censors the training data | ✅ Done, and the finding it produced is stronger than the one planned (see §03 below) |
 | §3.3 | Four-arm paired evaluation | ✅ Done — design frozen in `EVALUATION.md` §01–§03 **before** results existed, then executed against it unchanged; 10,000-resample cluster bootstrap over subscriptions, differenced inside each resample |
@@ -169,7 +177,52 @@ unchanged file is a verified no-op. Nineteen tests in `eval/tests/test_report.py
 the whole path — persist, read back, render — because the claim "every number here came
 out of the database" is a claim about all three.
 
-**`docs/WHAT_BROKE.md` is 691 lines written as it happened**, including the two Day-4
+**The agent runs a full cohort unattended, and the gate is structural.** `batch_v1`
+worked all 190 at-risk invoices in one run, exit 0, no supervision. The money gate is
+`can_use_tool`, not a prompt: `execute_recovery` and `simulated_notify` are held out of
+`allowed_tools` precisely because `allowed_tools` auto-approves *before* the permission
+callback ever runs. An approval is filed under exact coordinates — `invoice_id | action |
+execute_at` — and **popped**, so one guardrail call authorises exactly one presentment at
+exactly the slot it was granted for. A near-miss is a miss; the gate does no rounding,
+because a rounded timestamp is how a peak-window presentment gets through.
+
+**The live lane produces real Razorpay artifacts.** `live_v1` and `live_v2` ran against
+the test account and wrote real `plink_…` IDs into `audit_log.razorpay_entity_id`, with
+`notify: {sms:false, email:false}` — the link is real, the send is stubbed, the consent
+gate is real. `payment_link_notify` is excluded from the agent's tools entirely: it is the
+one call that could deliver a message around that gate.
+
+**Four defects were found in the agent layer and all four are in `WHAT_BROKE.md`.** The
+sharpest is that `--live` had never once run live — a `Literal` compared with `is`
+against a `StrEnum` member, and the existing test passed because it injected the enum the
+CLI never produced. The second is that the audit trail recorded only what the batch *did*:
+184 decisions, 156 rows, and complete silence about the 118 invoices ruled out on a rule.
+The third is an invoice that concluded in prose and nowhere else — the agent obtained a
+guardrail approval, narrated it, and exhausted its turn budget before spending it. That
+one is now a named `stop_reason`, `approval_granted_not_spent`, kept distinct from
+`no_conclusion_reached`, because filing an unspent approval as a compliance stop would be
+a lie in the merchant's favour.
+
+**Every invoice a batch concludes leaves a row.** Three write paths — the `PostToolUse`
+hook for actions and refusals, `record_conclusion` for write-offs and escalations that
+call no tool, and `record_silence` for the invoices where no tool ran at all. `batch_v2`
+demonstrates it: 50 invoices concluded, 50 audit rows, zero decisions without one.
+`batch_v1`'s 168 rows for 190 invoices predate the fix and are **not** being backfilled —
+`audit_log` is append-only, so a corrected run gets a new `run_id`.
+
+**The read-only backend is real and cannot write.** Seven `GET` endpoints over
+`winback_reader`, a role holding `SELECT` and nothing else; a test asserts the app's verb
+set is a subset of `{GET, HEAD}`, and another proves an `INSERT` through that connection
+raises `InsufficientPrivilege`. No number is computed in Python that the database can
+compute — the funnel is the `recovery_funnel` view verbatim, the evaluation is the same
+`eval_*` rows `EVALUATION.md` is generated from — so the dashboard and the committed
+report cannot disagree. Two defects surfaced immediately and are recorded: the headline ₹
+figure was serialised as a **string** (`sum()` → `numeric` → `Decimal` → JSON string,
+which JavaScript would have concatenated rather than added), and the worklist emptied
+itself whenever a batch succeeded, because the view filtered `status = 'at_risk'` and the
+agent's own actions move invoices off it.
+
+**`docs/WHAT_BROKE.md` is 1,181 lines written as it happened**, including the two Day-4
 generator bugs, the calibrator that scored best and had to lose, a band I invented and
 then withdrew, the arm-B window violations the docstrings predicted and the data refused
 to produce, a monkeypatch that silently did nothing and let two tests pass for the wrong
@@ -182,32 +235,24 @@ Razorpay scores Failure Recovery explicitly; this file is not being written on D
 
 In order. Each line is the plan's gate, not a vague intention.
 
-**Carried out of Day 5 into Day 6, deliberately.** Two things the evaluation did not need
-and the agent does. Naming them here rather than letting them pass as done:
+**Both items carried out of Day 5 are now closed.** The dataset loader (`sim/load.py`)
+populates `customers` / `subscriptions` / `invoices` / `payment_attempts` from the frozen
+seed, because the API reads tables and not a generator; and the per-presentment
+`decisions` and `audit_log` rows now exist under `run_id` and `arm`, which is what gives
+the drill-down something to drill into.
 
-- **The dataset loader.** The frozen dataset lives in `sim/` and is rebuilt in memory from
-  its seed, which is all the harness required. The `customers` / `subscriptions` /
-  `invoices` / `payment_attempts` tables are created and empty. Day 6 loads them, because
-  the API and the dashboard read tables, not a generator.
-- **Per-arm persistence of individual decisions.** `eval_*` stores the four arms'
-  *totals* and their bootstrap intervals — enough to regenerate `EVALUATION.md` and to
-  argue the result. The per-presentment `decisions` and `audit_log` rows are written by
-  the agent loop on Day 6, under `arm`, which is the point at which a drill-down has
-  something to drill into.
+**Waiting on a clock: finish `batch_v2`.** One command, after 7pm IST:
 
-**Day 6 — the agent (next).**
-- In-process MCP tools via `@tool` + `create_sdk_mcp_server`: `assess_recoverability`,
-  `compliance_guardrail`, `simulated_notify`, `execute_recovery`.
-- `can_use_tool` money gate as the hard structural block; `PostToolUse` for audit
-  append only. Read `claude_agent_sdk.types` directly rather than trusting the docs.
-- `agent/mcp_config.py` mode switch: remote HTTP vs local Docker stdio.
-- Both adapters implemented. `payment_link_notify` stays **out** of `allowed_tools` —
-  it is the one tool that could deliver a message around the consent gate.
-- Full batch run unattended; `decisions` and `audit_log` fully populated; the small
-  live cohort carries real Razorpay entity IDs.
+```
+python -m agent.orchestrator --run-id batch_v2
+```
 
-**Day 7 — API + dashboard skeleton.** FastAPI over the real tables; Next.js overview,
-exception worklist, decision drill-down. No mocked data anywhere.
+It resumes from `audit_log` — 50 concluded, 140 to work — because the trail *is* the
+checkpoint and there is no progress file that could disagree with it. Expect ~45 minutes
+and a few dollars. Not on the critical path: `batch_v1` already met the Day-6 gate.
+
+**Day 7 — the dashboard.** Next.js overview, exception worklist, decision drill-down
+against the seven live endpoints. No mocked data anywhere. The backend half is done.
 
 **Day 8 — the parts that win the video.** Compliance guardrail panel, evaluation page,
 the four animations (₹ count-up, funnel stagger, live agent trace with the red rule
@@ -236,6 +281,13 @@ Ordered by date. Nothing here is due before 4 September.
 | **Day 9 · 4 Sep** | **Record the 5-minute video.** Script is in `docs/DEMO_SCRIPT.md`; I will have the shot list and the running dashboard ready. `ffmpeg` is not installed — QuickTime screen capture is the path unless you want it installed on Day 8. | Your voice, your screen |
 | **Day 10 · 5 Sep** | **Submit the application** at razorpay.com/buildathon, with whatever student-eligibility proof the form asks for. Track 03. Early in the day. | It is your application |
 
+One small decision, whenever you get to it:
+
+- **`docs/index.html` is in the working tree and I did not write it.** 287 lines, a
+  generic dark gradient on a system font stack — none of the Satoshi / `#0e0b08` /
+  `#305eff` language the plan settled on. It is **excluded from every commit** until you
+  say what it is. Delete it, or tell me to replace it when the frontend block starts.
+
 Optional, and none of it blocks the build:
 
 - **Install `ffmpeg`** if you want to edit the video programmatically rather than in
@@ -263,7 +315,8 @@ front end on Razorpay's motion language · 8+ hrs/day).
 | Model does not beat retry-everything on raw ₹ | Headline is ₹/legal-attempt; arm B is disqualified on legality, decided before results existed | **Realised, exactly as anticipated.** The money difference is +₹28 with an interval spanning zero. The pre-committed response is the one now in `EVALUATION.md` §07, and a test keeps the tie a tie |
 | Simulator circularity challenged in the panel | Raised first, in the README and on camera, with the observed-vs-censored ECE gap (0.034 vs 0.442) as evidence it was taken seriously | Stronger now than planned — the covariate finding is a better example than the one it replaced |
 | Next.js eats Days 7–8 | Overview, worklist, drill-down and the compliance panel are mandatory; the evaluation page may degrade to committed PNGs | No |
-| `HookMatcher` shape differs from published docs | Day 6: read the installed types. `can_use_tool` is the load-bearing gate; audit hooks can fall back to wrapping the adapter | No |
+| `HookMatcher` shape differs from published docs | Day 6: read the installed types. `can_use_tool` is the load-bearing gate; audit hooks can fall back to wrapping the adapter | **Closed.** Read `claude_agent_sdk.types` directly and the loose part of the docs was real: `matcher=None` matches every tool, `tool_response` arrives as a bare list, and exceptions raised inside a `PostToolUse` hook are swallowed. All three are in `WHAT_BROKE.md`. No fallback needed |
+| A batch halts part-way through | `audit_log` is the checkpoint; re-running the same `--run-id` resumes rather than restarting, which is a correctness property before a convenience one — NPCI counts presentments, not batches | **Realised twice and it worked both times.** Once when the process was killed, once on the account's session limit. `batch_v2` resumed from 24 and again from 50, with the halt reason and the resume command in the report line |
 | Time overrun | Cut order: stretch lanes → dashboard polish → animations → live cohort. Never compliance tests, audit trail, or `EVALUATION.md` | **Worse than yesterday.** The two-day buffer was spent on Day 5 and the schedule now has no slack. The cut order stands and the stretch lane is, in practice, gone |
 
 ---
@@ -274,5 +327,7 @@ Newest first. One entry per working prompt.
 
 | # | Date | What changed |
 |---|---|---|
+| 4 | 2 Sep 2026 | **Read-only backend + two defects it exposed.** `api/main.py` — 7 `GET` endpoints over `winback_reader`; `api/tests/test_main.py`, 16 tests, no mocked database. Fixed: the headline ₹ figure serialised as a JSON **string** (`Decimal` from `sum()`), and `exception_worklist` filtering `status = 'at_risk'` so a run's worklist emptied itself the moment the run succeeded — the view now exposes `invoice_status` and the caller filters, with a new `GET /worklist` as the live queue. Two `WHAT_BROKE.md` entries; `ARCHITECTURE.md` §05 added. `batch_v2` halted at 50/190 on the account session limit (resets 7pm IST) — resumable, not a defect. 603 tests pass, `ruff` clean. |
+| 3 | 2 Sep 2026 | **Day 6 complete; gate met.** `agent/` — `orchestrator`, `tools`, `gate`, `hooks`, `mcp_config`, `adapters/{live_razorpay,simulated}`; `sim/load.py`; 112 tests. `batch_v1` 190/190 unattended, exit 0; `live_v1`/`live_v2` carry real `plink_…` IDs. Four defects found and fixed: `--live` had never run live (`Literal` vs `StrEnum` compared with `is`); the audit trail recorded only actions, never rule-based conclusions; an invoice that concluded in prose and nowhere else (now `approval_granted_not_spent`); every customer with no money recorded as a compliance block. Three `WHAT_BROKE.md` entries and the three-write-path table in `ARCHITECTURE.md` §03. |
 | 2 | 31 Aug 2026 | **Day 5 complete; gate met.** `ml/policy.py` + `ml/scorer.py`; `eval/` — `counterfactual.py`, `arms.py`, `bootstrap.py`, `persist.py`, `report.py`, `charts.py`, `__main__.py` — and four `eval_*` tables. Five runs persisted; `EVALUATION.md` §04–§06 generated from Postgres and guarded by `--check`, §07 hand-written and pinned by tests. `docs/assets/four_arms.png` rendered, re-read, four layout defects fixed. Two `WHAT_BROKE.md` entries added (a monkeypatch that did nothing; a zero-width bar that drew its edge). 465 tests pass, `ruff` clean, `--check` green. |
 | 1 | 28 Aug 2026 | Realism chart re-read and confirmed fixed (segment labels beside the bar, caption carrying the covariate finding). `ruff` clean, 360 tests pass. Day 4 committed as `5fe711f` and pushed. This report created. |

@@ -50,6 +50,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
+from math import isfinite
 from typing import Any
 
 from compliance.guardrail import ActionKind, ActionRequest, GuardrailDecision, evaluate
@@ -169,12 +170,28 @@ class ScoredCandidate:
         return self.decision.verdict is Verdict.APPROVE
 
     def to_dict(self) -> dict[str, Any]:
+        """The serialisable view. Every consumer of this turns it into JSON.
+
+        ``expected_value_paise`` becomes ``None`` when the candidate was ruled out, because
+        the sentinel for that is ``-inf`` and **JSON has no infinity**. ``json.dumps`` will
+        happily emit the bare token ``-Infinity``, which is not RFC 8259 and which
+        PostgreSQL's ``jsonb`` rejects outright — that is how a whole ``decisions`` row
+        went missing on the first agent batch, leaving an ``audit_log`` entry pointing at
+        a decision that was never written. Nothing is lost by the substitution: the
+        ``verdict`` and ``stop_reason`` on this same row already say why the candidate
+        scored negative infinity, which is the part a reviewer reads.
+
+        The sentinel itself stays a float inside the policy, where the argmax needs it to
+        compare. Only the wire format changes.
+        """
+        expected = self.expected_value_paise
         return {
             "kind": str(self.kind),
             "execute_at": self.execute_at.isoformat() if self.execute_at else None,
             "nudge_first": self.nudge_first,
             "p_success": self.p_success,
-            "expected_value_paise": round(self.expected_value_paise, 2),
+            "expected_value_paise": round(expected, 2) if isfinite(expected) else None,
+            "ruled_out": not isfinite(expected),
             "verdict": str(self.decision.verdict),
             "authorizing_rule": self.decision.authorizing_rule,
             "stop_reason": self.decision.stop_reason,

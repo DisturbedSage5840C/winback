@@ -745,10 +745,436 @@ step and not a suggestion.
 
 ---
 
+## 2026-08-31 · `allowed_tools` auto-approves before the money gate is consulted
+
+**Believed.** `ClaudeAgentOptions(allowed_tools=[...], can_use_tool=money_gate)` composes
+the obvious way: `allowed_tools` says which tools exist for this run, `can_use_tool`
+decides whether each individual call is permitted. So the full permitted set goes in
+`allowed_tools`, and the gate sits behind it.
+
+**Actually true.** They do not compose — they short-circuit. An entry in `allowed_tools`
+is a standing *approval*, and the SDK grants it **before** `can_use_tool` runs. Listing
+`execute_recovery` there meant the permission callback was never reached for the one call
+it exists to refuse. The gate was decorative. Every unapproved presentment in the first
+smoke run went straight through.
+
+The SDK does say so, in the only way that matters: it emits a `CanUseToolShadowedWarning`
+at construction time naming the shadowed tools. I had been reading the batch output, not
+the warnings above it.
+
+**Cost.** Forty minutes, and the uncomfortable realisation that if the smoke run had
+happened to produce no illegal action, this would have shipped as a compliance story with
+no compliance in it.
+
+**Changed.** The tool list is now split at the source rather than filtered at the call
+site. `agent/tools.py` exports `PREAPPROVED_TOOLS` (assess, guardrail — asking a question
+is not a privileged act) and `GATED_TOOLS` (execute, notify — the two that move money or
+reach a customer), with `ALLOWED_TOOLS` as the union for documentation only. The
+orchestrator passes **`PREAPPROVED_TOOLS`** to the SDK and nothing else, so the gated two
+have no standing approval and every call to them falls through to the callback.
+
+`test_the_gated_tools_are_not_pre_approved` asserts `set(PREAPPROVED_TOOLS).isdisjoint(
+GATED_TOOLS)`. If someone later "tidies up" by passing the union, the suite fails before
+the batch does. The general lesson: when a framework offers both a static allow-list and a
+dynamic callback, find out which one wins **before** relying on the other.
+
+---
+
+## 2026-08-31 · `PostToolUse` hands you a bare list, not an envelope
+
+**Believed.** The `PostToolUse` hook's `input_data["tool_response"]` is the tool result
+object — `{"content": [{"type": "text", "text": "..."}]}` — the same shape the tool itself
+returned.
+
+**Actually true.** It arrives as the bare `list` of content blocks. `payload.get("content")`
+on a list raises `AttributeError`, and the SDK swallows exceptions raised inside a hook, so
+the audit writer silently wrote nothing for a while and the run reported success.
+
+**Cost.** Twenty minutes, most of it spent printing `type(...)` inside a hook because
+nothing else could tell me what was in it.
+
+**Changed.** `_payload()` in `agent/hooks.py` accepts both shapes — a list of blocks, a
+dict with `content`, or a raw string — and keeps unparseable text rather than discarding
+it, so a malformed response becomes a visible audit row instead of a missing one. Four
+tests in `agent/tests/test_hooks.py` pin each shape.
+
+---
+
+## 2026-08-31 · JSON has no infinity, and the hook that found out said nothing
+
+**Believed.** The batch had completed. 25 invoices, an audit row for each. The one thing
+left was to confirm the `decisions` rows lined up with them.
+
+**Actually true.** They did not. `inv_0027_02` had an `audit_log` row whose `decision_id`
+was `NULL` — an executed action pointing at a decision that was never written. Reproducing
+the insert directly gave the real error, which the batch had never shown me:
+
+```text
+InvalidTextRepresentation: invalid input syntax for type json
+DETAIL:  Token "-Infinity" is invalid.
+```
+
+`ml/policy.py` uses `float("-inf")` as the sentinel for a candidate the guardrail ruled
+out — correct inside the policy, where the argmax needs a real number to compare. But
+`json.dumps` serialises it as the bare token `-Infinity`, which is **not RFC 8259**, and
+PostgreSQL's `jsonb` rejects it outright. So any invoice whose candidate set contained at
+least one denied action failed to write. `inv_0007_01` worked and `inv_0027_02` did not,
+which is exactly the kind of intermittent that looks like a database problem and is not.
+
+Three separate things had to be wrong at once for this to be invisible: Python emits a
+non-standard token by default, Postgres refuses it, and **the SDK swallows whatever a
+`PostToolUse` hook raises**. The failure surfaced as an absence.
+
+**Cost.** An hour, nearly all of it before the error message was in hand. Reading the rows
+rather than re-running the batch is what found it — the orphan `decision_id` named the
+failing insert precisely.
+
+**Changed.** Three layers, because one would have been a patch:
+
+1. **At the source.** `ScoredCandidate.to_dict()` emits `expected_value_paise: null` plus
+   an explicit `ruled_out: true` when the value is non-finite. Nothing is lost — the
+   `verdict` and `stop_reason` on the same row already say *why* it scored negative
+   infinity, and that is the part a reviewer reads. The float sentinel is untouched inside
+   the policy, so no evaluation number moves.
+2. **At the boundary.** Every `jsonb` write goes through `_jsonb(value)`, which is
+   `json.dumps(..., allow_nan=False)`. A non-finite number that reaches the database now
+   raises against the line that produced it instead of being discovered later as a gap.
+3. **At the silence.** The audit hook catches its own write failures into
+   `AuditWriter.write_failures`; `BatchReport` carries them, prints them, and `main()`
+   exits non-zero. A batch that finished with a hole in its audit trail did not finish.
+
+`agent/tests/test_audit_writes.py` writes 20 consecutive real invoices into a rolled-back
+transaction — the regression as a property, not as one remembered id.
+
+The general lesson is not about JSON. It is that an audit trail whose failures are
+invisible is not an audit trail, and that a hook runner which swallows exceptions makes
+every write inside it a silent one until you make it otherwise.
+
+---
+
+## 2026-08-31 · `HookMatcher` — resolved, and it was the loose part of the docs
+
+Carried as an open item since Day 1. Read directly from the installed
+`claude_agent_sdk.types` (0.2.144) rather than copied from the published example:
+
+```python
+HookMatcher(matcher: str | None = None, hooks: list = [], timeout: float | None = None)
+```
+
+`matcher=None` matches every tool — which is what `audit_matcher()` uses, filtering by
+tool name inside the hook instead, so a tool added later cannot quietly escape the audit
+by not matching a pattern. No architectural change was needed; the risk row in the plan
+("audit hooks can fall back to wrapping the adapter") does not need to be spent.
+
+---
+
+## 2026-08-31 · Every customer with no money was recorded as a compliance block
+
+The first full batch wrote 11 rows with `trigger='tool_error'`, `outcome='blocked'`. I
+looked at what was failing, expecting exceptions, and found this in `stop_reason`:
+
+```text
+inv_0631_03: {'error_code': 'BAD_REQUEST_ERROR', 'error_source': 'customer',
+              'error_reason': 'insufficient_funds', 'root_cause_class': 'BD_transient'}
+inv_0843_01: {'error_code': 'GATEWAY_ERROR', 'error_source': 'network', ...}
+inv_1632_04: {'error_code': 'GATEWAY_ERROR', 'error_source': 'bank',
+              'error_reason': 'issuer_down', 'root_cause_class': 'TD'}
+```
+
+Those are not tool errors. They are **declined debits** — the ordinary outcome this whole
+project exists to predict. The audit hook branched on truthiness:
+
+```python
+if payload.get("error"):        # ← wrong: a failed debit has one too
+    ... trigger="tool_error", outcome="blocked"
+```
+
+and `ExecutionResult.error` is, by its own docstring, *"Razorpay's error fields, verbatim,
+when a presentment failed."* Both shapes carry an `error` key. One means the executor
+broke; the other means the bank said no.
+
+**Why this one mattered more than it looks.** `blocked` is not a neutral label here — it
+is *the compliance signal*. It is the red chip in the demo, the outcome the violations
+chart counts, the row a panelist would read as "the guardrail stopped this." Eleven
+customers with an empty account were recorded as eleven actions the guardrail refused.
+The aggregate is the tell: that run has **zero** `outcome='failed'` rows across 190
+invoices, in a dataset built around an 8–15% failure rate. Every decline had been
+relabelled.
+
+The irony is that the codebase already argues against exactly this, twice, in the
+opposite direction. `AdapterError`: *"Conflating them would let an outage look like a
+customer with no money, which is the single most misleading thing this system could
+record."* And `_execute`: *"An executor failure is not a declined payment, and must never
+be recorded as one."* I had written the guard for one direction and then walked into it
+backwards.
+
+The fix is a named predicate rather than a tighter truthiness test, because the
+discriminator is a fact about the two return shapes and deserves to be stated once:
+
+```python
+def _is_tool_refusal(payload) -> bool:
+    # A tool that refused never reached the adapter, so it has no ``outcome``.
+    # A tool that ran always returns one — every ExecutionResult has the field.
+    return bool(payload.get("error")) and "outcome" not in payload
+```
+
+Four tests pin it, one per shape: a decline, an outage, a spent approval, a clean run.
+
+**What it cost.** `audit_log` is append-only in three independent ways, which is the
+property that makes it worth anything — so the mislabelled rows could not be corrected in
+place, by me or by anyone at a psql prompt. The only route to a clean trail was the
+sanctioned one: `reset_world()` → `sim.load` → `python -m eval` → `eval.report`, then re-run
+the batch from zero. `docs/EVALUATION.md` regenerated byte-for-byte identically, which is
+the check that the reload actually restored the same world. An append-only table making a
+mistake expensive to erase is the design working, not the design failing.
+
+---
+
+## 2026-09-01 · The audit trail recorded only what the batch did
+
+The first full batch finished clean: 190 invoices, none errored, exit 0. Then the two
+tables disagreed.
+
+```
+decisions: 184        audit_log: 156
+```
+
+Twenty-eight invoices had reached a conclusion and left no trace of it. The conclusion in
+every one of those cases was a **write-off** — and a write-off calls no tool, because
+there is nothing to call. `audit_log` was written by `PostToolUse`, which fires on tools
+that ran. So the trail recorded every action the agent took and nothing about the actions
+it declined to take.
+
+That is the wrong half. An audit trail exists to answer one question — *why was this
+customer not charged* — and the invoices it was silent about are precisely the ones where
+the answer is a rule.
+
+The reasons existed. They had been computed on every batch and written into
+`decisions.candidate_set`, where they can be read one row at a time and not counted:
+
+```sql
+-- 118 ruled-out candidates across 56 decisions
+bd_hard_not_retryable   90
+dnd_registered          16
+consent_withdrawn       12
+```
+
+**What I nearly built instead.** My first instinct was that the guardrail "never denies"
+because the batch never walks an invoice to its cap, and that the fix was to make it —
+multi-wave batching, or an in-agent walk to conclusion, so that an `npci_1_plus_3_cap_
+exhausted` denial would finally appear. Checking the evaluation stopped that: **arm D
+consumes 196 attempts over 190 invoices.** It essentially never reaches attempt 3, let
+alone 5. In a rewound replay the cap *cannot* bind, and any run in which it did would be
+one I had arranged. The refusals that actually happen are the three above, and the defect
+was never that they were absent — it was that they were unreachable.
+
+So the fix records what is real rather than manufacturing what would demo well:
+`TERMINAL_ACTIONS`, a `record_conclusion` on the audit writer, and `_binding_refusal`,
+which asks the scored candidate set which rule closed the door. Presentments are searched
+first: a `bd_hard_not_retryable` on the retry is the reason the invoice cannot be
+recovered, while a `dnd_registered` on the nudge is only the reason the customer cannot be
+told about it. Both are true; only the first answers the question.
+
+The distinction the row now carries, and deliberately does not flatten: `blocked` **with**
+a `stop_reason` is a compliance stop; `blocked` **without** one is an economic judgement
+about an attempt that was legally available and not worth making. Filing the second under
+the first would inflate the compliance story with decisions the law had nothing to do
+with.
+
+`batch_v1`'s trail was not backfilled and could not have been. A corrected run gets a new
+`run_id`.
+
+---
+
+## 2026-09-02 · `--live` had never once run live
+
+`live_v1` completed, and its own headline said:
+
+```
+run live_v1 [simulated]: ... executor: simulated
+```
+
+It had been invoked with `--live`. It exited 0.
+
+Two definitions of one name, in two layers:
+
+```python
+# core/config.py    — a Literal, so `settings.execution_mode` is a plain str
+ExecutionMode = Literal["simulated", "live"]
+
+# agent/adapters/base.py — a StrEnum, because the adapter layer wants a type
+class ExecutionMode(StrEnum): ...
+```
+
+and one identity check across the seam:
+
+```python
+if settings.execution_mode is not ExecutionMode.LIVE:   # ← never True for "live"
+    return None
+```
+
+`"live" is ExecutionMode.LIVE` is `False`. The live adapter was unreachable from the CLI
+and had been for its entire existence.
+
+**The part worth keeping.** There was a test for this, and it passed:
+
+```python
+_adapter_for(replace(settings, execution_mode=ExecutionMode.LIVE))
+```
+
+It injected the enum member. `get_settings()` returns the string. The test was asserting
+against a state the program never produces — a green test standing exactly where the bug
+was. The lesson is not "use `==`"; it is that a test which constructs its own input can
+certify a path that nothing else can reach. The new test starts by asserting
+`get_settings().execution_mode == "simulated"` *is a str*, so it fails if the comparison
+ever goes back to identity.
+
+The fix coerces at the boundary — `ExecutionMode(settings.execution_mode)` — and then adds
+a second, independent check in `main()`, because the first failure was invisible in every
+artifact the run produced:
+
+```python
+if args.live and report.execution_mode != "live":
+    return 1
+```
+
+What was asked for, compared against what the report says happened, by a different path
+from the one that chose the adapter. Two paths now have to agree before a live run passes.
+
+`live_v2` printed `executor: live` and wrote ten real payment-link ids into
+`audit_log.razorpay_entity_id` — `plink_TX74boAx41rZbw`, `plink_TX74uG3aUrqWYR`, and eight
+more — alongside the first `outcome='blocked'` row the agent has ever written with a real
+`stop_reason` on it. Both fixes, visible in one table.
+
+---
+
+## 2026-09-02 · An invoice that concluded in prose and nowhere else
+
+`live_v2` reported `12/12 invoices (0 errored)` and wrote 11 audit rows. The arithmetic
+was there to be done and nothing in the report did it.
+
+`inv_0007_01` had a `decisions` row with a full approval:
+
+```
+proposed_action  retry
+guardrail_verdict  APPROVE
+authorizing_rule   npci_1_plus_3: attempt 2/4 permitted; non_peak_window: 13:30 IST is
+                   outside peak hours; afa_threshold: ₹1,091 within the ₹15,000 ceiling
+                   for saas; pre_debit_notice: notice sent 33.8h before the debit;
+                   root_cause_retryability: TD may be retried
+```
+
+and nothing else. Its closing sentence was *"The guardrail approved the retry (NPCI 1+3:
+attempt 2/4, non-peak 13:30 IST, AFA ₹1,091 under th…"* — the agent obtained the approval,
+narrated it, and reached `max_turns` before calling `execute_recovery`. The live path is
+slower and talkier than the simulated one; six turns is comfortable for one and evidently
+not always for the other.
+
+Nothing illegal happened and no money moved. The problem is what the trail then said:
+exactly as much about that invoice as about one the batch had never opened. An
+approval-with-no-attempt and a never-attempted invoice are different facts and were
+recorded identically.
+
+This is the one case hooks structurally cannot catch. `PostToolUse` fires on tools; the
+event here is that no tool ran. So the batch loop checks its own coverage after each
+invoice and closes the gap itself — `AuditWriter.covered`, filled inside `record_action`
+rather than by each caller, so no write path can forget to mark one.
+
+The two reasons are kept apart, for the same reason as the entry above:
+
+| `stop_reason` | What it means |
+|---|---|
+| `approval_granted_not_spent` | The guardrail authorised the presentment. The attempt was lost to the agent's turn budget, not to a rule. |
+| `no_conclusion_reached` | The agent ended without acting *or* concluding. |
+
+Recording the first as a compliance stop would read as a law protecting the merchant from
+a recovery it was entitled to make — a lie in the merchant's favour, which is the
+direction an audit trail must never lean. The count is now in the headline
+(`· 1 unacted`), because a recovery lost to a turn budget is a real loss and burying it in
+a table nobody opens is how it stays lost.
+
+---
+
+## 2026-09-02 · The worklist emptied itself whenever the batch succeeded
+
+**Symptom.** `GET /runs/batch_v2/worklist` returned `{"total": 25, "rows": []}`. Twenty-five
+invoices worked, twenty-five audit rows, and nothing to show for any of them. Two tests
+skipped rather than failed, because both were written to skip on an empty worklist —
+which is how a defect gets to look like a legitimately quiet database.
+
+**Cause.** `exception_worklist` opened with `WHERE i.status = 'at_risk'`, which is exactly
+right for the view's original job: the queue of invoices still needing work. But the
+agent's own actions move an invoice off that status — `recovered` on a successful
+presentment, `written_off` on a `BD_hard` conclusion. So joining a *completed* run against
+an at-risk-only view returns the empty set by construction. The page whose entire purpose
+is to show what the batch decided went blank precisely when the batch had decided
+something.
+
+```
+run worklist  =  audit_log (what the run did)  ⋈  exception_worklist (at_risk only)
+                                                                      ↑
+                                        the run's success removes its own rows from here
+```
+
+**Fix.** The filter moved out of the view and into the caller. `exception_worklist` now
+exposes `invoice_status` and filters nothing; `GET /worklist` — the live queue — filters
+`at_risk`, and `GET /runs/{id}/worklist` filters nothing, because a concluded invoice is
+the thing it exists to display. The budget arithmetic (`attempts_used` /
+`attempts_remaining`, still excluding counterfactual rows) stays in the view, where it is
+computed once.
+
+**The lesson is about the two tests that skipped.** `pytest.skip("this run touched no
+at-risk invoice still in the worklist")` was written to tolerate a legitimately empty
+database. It also tolerated this. A skip that can absorb a defect is a test that has
+stopped being one, so both are now preceded by
+`test_a_finished_run_still_has_a_worklist`, which asserts the rows exist rather than
+stepping around their absence.
+
+---
+
+## 2026-09-02 · The headline ₹ figure was a string
+
+**Symptom.** `test_the_overview_is_the_view_and_not_a_second_opinion` failed on one field
+out of twelve:
+
+```
+AssertionError: recovered_paise
+assert '15058200' == Decimal('15058200')
+```
+
+**Cause.** `sum()` over a `bigint` column returns `numeric` in Postgres, psycopg maps
+`numeric` to `Decimal`, and FastAPI — correctly, since JSON has no decimal type and
+float would lose precision — serialises `Decimal` as a **string**. Every other field in
+the funnel is a `count(*)`, which comes back as `bigint` and serialises as a number. So
+the one field that was a sum, and the only one carrying rupees, was the one that came out
+quoted.
+
+**Why this would have survived to the demo.** `"15058200"` renders as `15058200`. A
+dashboard formatting it as currency shows the right number. It fails only where JavaScript
+adds it to something — a total across runs, a delta against the baseline — and `+` on a
+string concatenates instead of adding, silently and without an error. The failure mode is
+a wrong ₹ total on the slide the whole submission rests on, with nothing anywhere
+reporting a problem.
+
+**Fix.** `api/main._number` converts every `Decimal` at the edge: to `int` when the value
+is integral, which every paise total and every count in this API is, and to `float`
+otherwise, which is where the genuinely fractional numbers live (bootstrap bounds, ECE in
+`eval_*`). Nothing is rounded — an integral `Decimal` converts exactly.
+`test_the_rupee_total_is_a_number_and_not_a_string` asserts the type, not the value,
+because the value was never wrong.
+
+---
+
 ## Open
 
+- **`batch_v2` is 50/190.** The re-run that exercises full audit coverage halted at
+  `inv_1448_01` on the Claude account's own session limit, not on anything in this repo:
+  `You've hit your session limit · resets 7pm (Asia/Calcutta)`. The halt path behaved as
+  designed — reason recorded in the report line, 140 invoices named as not attempted,
+  resume command printed. `python -m agent.orchestrator --run-id batch_v2` picks it up
+  from `audit_log`. The Day-6 gate itself is met by `batch_v1` (190/190, unattended,
+  exit 0). What `batch_v2` adds is coverage: 50 invoices, 50 audit rows, zero decisions
+  without one — against `batch_v1`'s 168 rows for 190 invoices, which cannot be
+  backfilled and is not going to be.
 - **S2S Recurring activation** — assumed unavailable. If it is granted, the live lane
   widens; the architecture does not change. Tracked in `docs/LIVE_LANE_FINDINGS.md`.
-- **`HookMatcher`'s exact shape** in `claude_agent_sdk.types` — the published example
-  is loose. To be read directly from the installed package on Day 6 rather than copied
-  from the docs.

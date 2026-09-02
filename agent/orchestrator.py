@@ -202,20 +202,27 @@ def _already_worked(run_id: str) -> set[str]:
     one run would present its mandate twice, and NPCI counts presentments, not batches —
     a resume that redid its completed work would spend legal attempts to buy nothing.
 
-    **Both tables, because a conclusion is not always an action.** An invoice the guardrail
-    denied — the cap is spent, so the answer is to write it off — produces a ``decisions``
-    row and no ``audit_log`` row at all, since only the tools that *do* something are
-    audited. Reading the action table alone found 77 of the 85 invoices the interrupted
-    batch had actually concluded, and would have re-worked the eight it wrote off: a second
-    decision row for one invoice in one run, and tokens spent to reach the same answer.
+    **``audit_log`` alone, because every conclusion now leaves a row there.** This query
+    used to union ``decisions`` as well: an invoice the guardrail denied produced a
+    decision and no audit row, so the action table alone found 77 of the 85 invoices an
+    interrupted batch had concluded and would have re-worked the eight it wrote off.
+    ``record_conclusion`` and ``record_silence`` closed that hole — a write-off, an
+    escalation, and an invoice nothing was done to each write their own row — and the
+    union then became actively wrong in the other direction. A decision with no audit row
+    no longer means "concluded without acting". It means the item died between the
+    guardrail's answer and the tool call, which is exactly what a session-limit halt does,
+    and it is the one case that *must* be re-worked. Skipping it would leave an invoice
+    with an approval on record, no action, and no audit row explaining the silence.
+
+    Re-working it is safe against the cap: ``execute_recovery`` writes its audit row
+    through the ``PostToolUse`` hook, so an invoice with no row had no presentment, and
+    the attempt budget is counted from ``payment_attempts`` rather than from this query.
     """
     with read_connection() as conn:
         rows = conn.execute(
             """
             SELECT subject_id AS invoice_id FROM audit_log
              WHERE run_id = %(run)s AND subject_type = 'invoice'
-            UNION
-            SELECT invoice_id FROM decisions WHERE run_id = %(run)s
             """,
             {"run": run_id},
         ).fetchall()

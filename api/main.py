@@ -20,14 +20,29 @@ is a rounding error waiting for a total.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+from compliance import (
+    afa_threshold,
+    consent_gate,
+    guardrail,
+    non_peak_window,
+    npci_retry_cap,
+    pre_debit_notice,
+)
+from compliance.guardrail import ActionKind, ActionRequest
+from compliance.result import RuleResult
+from compliance.root_cause import RootCause
 from core.config import get_settings
 from core.db import healthcheck, read_connection
+
+IST = ZoneInfo("Asia/Kolkata")
 
 app = FastAPI(
     title="Winback API",
@@ -61,6 +76,10 @@ def _number(value: Any) -> Any:
     if isinstance(value, Decimal):
         return int(value) if value == value.to_integral_value() else float(value)
     return value
+
+
+def _iso(moment: datetime | None) -> str | None:
+    return moment.isoformat() if moment is not None else None
 
 
 def _rows(sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -206,6 +225,49 @@ def worklist(
     return {"run_id": run_id, "total": (total or {}).get("n", 0), "rows": rows}
 
 
+@app.get("/runs/{run_id}/events")
+def events(
+    run_id: str,
+    since: int | None = Query(None, ge=0, description="event_id from the previous poll"),
+    limit: int = Query(50, ge=1, le=500),
+) -> dict[str, Any]:
+    """The run's audit rows in the order they were appended — the live trace.
+
+    Polled with ``since`` set to the last ``event_id`` seen, so a page watching a batch
+    receives each decision once as it lands. Cursoring on the ``BIGSERIAL`` id rather
+    than on a timestamp is deliberate: two rows can share a microsecond, and a client
+    resuming from a timestamp would either skip one or replay it. ``audit_log`` is
+    append-only, so a row already sent can never change under the cursor, and the batch
+    is a single writer, so ids commit in the order they are issued.
+
+    Each row carries the ``authorizing_rule`` from its decision, because the rule is the
+    interesting part of the event — a blocked presentment with the rule that blocked it
+    is the demonstration; a blocked presentment on its own is a shrug.
+    """
+    rows = _rows(
+        """
+        SELECT a.event_id, a.ts_utc, a.ts_ist, a.subject_id AS invoice_id,
+               a.action_taken, a.channel, a.outcome, a.stop_reason,
+               a.recovered_amount_paise, a.execution_mode, a.razorpay_entity_id,
+               a.compliance_violation, a.trigger,
+               d.authorizing_rule, d.guardrail_verdict, d.calibrated_prob,
+               d.expected_value_paise
+          FROM audit_log a
+          LEFT JOIN decisions d USING (decision_id)
+         WHERE a.run_id = %(run)s
+           AND (%(since)s::bigint IS NULL OR a.event_id > %(since)s::bigint)
+         ORDER BY a.event_id
+         LIMIT %(limit)s
+        """,
+        {"run": run_id, "since": since, "limit": limit},
+    )
+    return {
+        "run_id": run_id,
+        "cursor": rows[-1]["event_id"] if rows else since,
+        "events": rows,
+    }
+
+
 @app.get("/worklist")
 def live_worklist(
     limit: int = Query(100, ge=1, le=500),
@@ -296,6 +358,168 @@ def invoice(invoice_id: str, run_id: str | None = None) -> dict[str, Any]:
             params,
         ),
     }
+
+
+# ----------------------------------------------------------- the compliance panel
+
+
+@app.get("/compliance/window")
+def compliance_window(n: int = Query(3, ge=1, le=12)) -> dict[str, Any]:
+    """Where the clock is against NPCI's peak windows, right now.
+
+    Peak IST is 10:00-13:00 and 17:00-21:30, and a presentment inside either is a
+    violation regardless of how good the model thinks it looks. The countdown is what
+    makes that visible on the panel before it is visible in an audit row.
+
+    ``seconds_to_transition`` is served rather than computed in the browser because a
+    client clock is not the clock the agent will schedule against, and a panel that
+    disagreed with the guardrail by a few minutes would be wrong exactly at the boundary
+    — the only place it matters.
+    """
+    return _window(datetime.now(UTC), n)
+
+
+def _window(now: datetime, n: int = 3) -> dict[str, Any]:
+    """The window snapshot as a plain function, so the invoice panel can embed it.
+
+    Separate from the handler above on purpose: calling a FastAPI endpoint as a Python
+    function hands its parameters the ``Query`` *default objects* rather than values, and
+    ``n`` arrives as a ``Query`` instance that blows up on the first comparison. It did.
+    """
+    return {
+        "now_utc": now.isoformat(),
+        "now_ist": now.astimezone(IST).isoformat(),
+        "is_non_peak": non_peak_window.is_non_peak(now),
+        "seconds_to_transition": int(non_peak_window.time_to_next_transition(now).total_seconds()),
+        "peak_windows_ist": ["10:00-13:00", "17:00-21:30"],
+        "next_legal_slots_ist": [
+            slot.astimezone(IST).isoformat() for slot in non_peak_window.next_slots(now, n)
+        ],
+    }
+
+
+@app.get("/invoices/{invoice_id}/compliance")
+def invoice_compliance(invoice_id: str, at: datetime | None = None) -> dict[str, Any]:
+    """What every rule says about this invoice, right now — asked, not reimplemented.
+
+    This endpoint imports `compliance/` and calls the same pure functions the agent
+    calls. That is the whole point of it. A compliance panel that recomputed the 1+3 cap
+    or the peak-window arithmetic in TypeScript would be a second implementation of the
+    law, free to drift from the one that actually gates the money, and the screen a
+    reviewer trusts would be the copy rather than the original.
+
+    Both the retry and the nudge are evaluated, because they are governed by different
+    rules — NPCI and the window govern presentments, consent governs messages — and the
+    panel's job is to show that an invoice can be simultaneously un-retryable and
+    contactable, which is the case the whole policy turns on.
+
+    Nothing here writes, schedules, or reserves anything: it is the guardrail answering a
+    hypothetical at a moment, which is exactly what a panel should be showing.
+    """
+    facts = _row(
+        """
+        SELECT w.*, c.consent_updated_at
+          FROM exception_worklist w
+          JOIN customers c ON c.customer_id = w.customer_id
+         WHERE w.invoice_id = %(inv)s
+        """,
+        {"inv": invoice_id},
+    )
+    if facts is None:
+        raise HTTPException(status_code=404, detail=f"no invoice {invoice_id!r}")
+
+    now = at or datetime.now(UTC)
+    attempts_used = int(facts["attempts_used"])
+
+    panel: dict[str, Any] = {
+        "invoice_id": invoice_id,
+        "evaluated_at": now.isoformat(),
+        "amount_paise": facts["amount_paise"],
+        "npci": {
+            "attempts_used": attempts_used,
+            "attempts_remaining": npci_retry_cap.attempts_remaining(attempts_used),
+            "cap": 4,
+            **_result(npci_retry_cap.check(attempts_used)),
+        },
+        "afa": {
+            "ceiling_paise": afa_threshold.ceiling_for(facts["mcc_category"]),
+            "mcc_category": facts["mcc_category"],
+            **_result(afa_threshold.check(facts["amount_paise"], facts["mcc_category"])),
+        },
+        "consent": {
+            "status": facts["consent_status"],
+            **_result(
+                consent_gate.check_nudge(
+                    consent_status=facts["consent_status"],
+                    consent_updated_at=facts["consent_updated_at"],
+                    # The debit presented against the customer *is* the transaction that
+                    # opens the messaging window — the same reading `ml/policy.py` takes.
+                    # Using the last successful charge would silence precisely the
+                    # customer whose payments keep failing.
+                    last_transaction_at=facts["charge_at"],
+                    now=now,
+                )
+            ),
+        },
+        "pre_debit_notice": {
+            "notice_sent_at": _iso(facts["notice_sent_at"]),
+            "charge_at": _iso(facts["charge_at"]),
+            **_result(
+                pre_debit_notice.check(
+                    notice_sent_at=facts["notice_sent_at"],
+                    charge_at=facts["charge_at"],
+                    attempt_number=attempts_used + 1,
+                )
+            ),
+        },
+        "window": _window(now),
+        "root_cause": facts["latest_root_cause"],
+    }
+
+    # The composed verdicts. A retry needs a root cause, because retryability is decided
+    # from Razorpay's own error object and never guessed — an invoice with no failed
+    # attempt on record has nothing to classify, and saying so is more useful than
+    # defaulting it to retryable and being wrong in the permissive direction.
+    if facts["latest_root_cause"] is None:
+        panel["retry"] = {
+            "verdict": None,
+            "detail": "no failed attempt on record, so there is no root cause to classify",
+        }
+    else:
+        panel["retry"] = _verdict(facts, ActionKind.RETRY, attempts_used, now)
+    panel["nudge"] = _verdict(facts, ActionKind.NUDGE, attempts_used, now)
+    return panel
+
+
+def _result(result: RuleResult) -> dict[str, Any]:
+    """One rule's answer, flattened for the panel. ``detail`` is the string that goes on
+    the chip — written for a person reading an audit trail, and served verbatim so the
+    screen and the trail say the same words."""
+    return {
+        "verdict": str(result.verdict),
+        "detail": result.detail,
+        "stop_reason": result.stop_reason,
+    }
+
+
+def _verdict(
+    facts: dict[str, Any], kind: ActionKind, attempts_used: int, now: datetime
+) -> dict[str, Any]:
+    """The full guardrail, composed, for one proposed action at ``now``."""
+    request = ActionRequest(
+        kind=kind,
+        execute_at=now,
+        amount_paise=facts["amount_paise"],
+        mcc_category=facts["mcc_category"],
+        attempts_used=attempts_used,
+        root_cause=RootCause(facts["latest_root_cause"] or RootCause.TD),
+        charge_at=facts["charge_at"],
+        notice_sent_at=facts["notice_sent_at"],
+        consent_status=facts["consent_status"],
+        consent_updated_at=facts["consent_updated_at"],
+        last_transaction_at=facts["charge_at"],
+    )
+    return guardrail.evaluate(request, now=now).to_dict()
 
 
 # ------------------------------------------------------------------- evaluation

@@ -178,6 +178,92 @@ def test_an_unknown_invoice_is_a_404(client: TestClient):
     assert client.get("/invoices/inv_9999_99").status_code == 404
 
 
+def test_the_trace_cursors_on_the_id_and_never_replays_a_row(client: TestClient, a_run: str):
+    """``event_id`` is ``BIGSERIAL``. Cursoring on ``ts_utc`` instead would either skip or
+    duplicate a row whenever two events shared a microsecond, and the live trace is the
+    demo's best twenty seconds — a decision shown twice, or lost, is visible on camera."""
+    first = client.get(f"/runs/{a_run}/events", params={"limit": 5}).json()
+    assert first["events"], "a run in /runs has audit rows by construction"
+    assert [row["event_id"] for row in first["events"]] == sorted(
+        row["event_id"] for row in first["events"]
+    )
+    assert first["cursor"] == first["events"][-1]["event_id"]
+
+    nxt = client.get(f"/runs/{a_run}/events", params={"since": first["cursor"], "limit": 5}).json()
+    seen = {row["event_id"] for row in first["events"]}
+    assert seen.isdisjoint({row["event_id"] for row in nxt["events"]})
+
+
+def test_every_traced_event_carries_the_rule_that_authorised_it(client: TestClient, a_run: str):
+    """A blocked presentment with the rule that blocked it is the demonstration. A blocked
+    presentment on its own is a shrug — so the join onto ``decisions`` is load-bearing."""
+    events = client.get(f"/runs/{a_run}/events", params={"limit": 20}).json()["events"]
+    acted = [row for row in events if row["action_taken"] in {"retry", "nudge"}]
+    if not acted:
+        pytest.skip("this page of the trace holds no action")
+    for row in acted:
+        assert row["authorizing_rule"], row["invoice_id"]
+        assert row["guardrail_verdict"] is not None
+
+
+def test_the_window_countdown_is_served_and_not_left_to_the_browser(client: TestClient):
+    """A client clock is not the clock the agent schedules against, and a panel that
+    disagreed with the guardrail by a few minutes would be wrong exactly at the boundary —
+    the only place the peak-window rule is interesting."""
+    body = client.get("/compliance/window").json()
+    assert isinstance(body["is_non_peak"], bool)
+    assert body["seconds_to_transition"] > 0
+    assert len(body["next_legal_slots_ist"]) == 3
+    assert client.get("/compliance/window", params={"n": 5}).json()["next_legal_slots_ist"] != []
+
+
+def test_the_compliance_panel_calls_the_rules_rather_than_restating_them(client: TestClient):
+    """The endpoint imports ``compliance/`` and calls the same pure functions the agent
+    calls, which is the whole point of it: a panel that recomputed the 1+3 cap in
+    TypeScript would be a second implementation of the law, free to drift from the one
+    that gates the money, and the screen a reviewer trusts would be the copy."""
+    from compliance import npci_retry_cap
+
+    rows = client.get("/worklist", params={"limit": 1}).json()["rows"]
+    if not rows:
+        pytest.skip("nothing outstanding in this database to evaluate")
+
+    body = client.get(f"/invoices/{rows[0]['invoice_id']}/compliance").json()
+    used = body["npci"]["attempts_used"]
+    assert body["npci"]["attempts_remaining"] == npci_retry_cap.attempts_remaining(used)
+    assert body["npci"]["verdict"] == str(npci_retry_cap.check(used).verdict)
+
+    # Retry and nudge are governed by different rules — NPCI and the window govern
+    # presentments, consent governs messages — so an invoice can be un-retryable and
+    # contactable at the same time. That case is what the policy turns on, so the panel
+    # has to answer both questions rather than one.
+    assert "retry" in body and "nudge" in body
+    assert body["nudge"]["verdict"] in {"APPROVE", "DENY", "REDIRECT_TO_WINDOW", "ESCALATE_HUMAN"}
+
+
+def test_the_panel_refuses_to_guess_a_root_cause(client: TestClient):
+    """Retryability is decided from Razorpay's own error object and never guessed. An
+    invoice with no failed attempt has nothing to classify, and saying so beats defaulting
+    it to retryable — which is being wrong in the permissive direction, on the one axis
+    where permissive means a violation."""
+    from core.db import read_connection
+
+    with read_connection() as conn:
+        row = conn.execute(
+            "SELECT invoice_id FROM exception_worklist WHERE latest_root_cause IS NULL LIMIT 1"
+        ).fetchone()
+    if row is None:
+        pytest.skip("every invoice in this database has a classified failure")
+
+    body = client.get(f"/invoices/{row['invoice_id']}/compliance").json()
+    assert body["retry"]["verdict"] is None
+    assert "no root cause" in body["retry"]["detail"]
+
+
+def test_an_unknown_invoice_has_no_compliance_panel(client: TestClient):
+    assert client.get("/invoices/inv_9999_99/compliance").status_code == 404
+
+
 def test_the_evaluation_comes_from_the_tables_that_generate_the_report(client: TestClient):
     """Same rows as ``docs/EVALUATION.md``, so the page and the committed report cannot
     disagree without one of them being stale — and ``eval.report --check`` catches that."""

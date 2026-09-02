@@ -1165,16 +1165,74 @@ because the value was never wrong.
 
 ---
 
+## 2026-09-03 · The resume query had come to mean the opposite of what it said
+
+**Symptom.** `batch_v2` halted a second time on the account session limit, this time
+mid-item at `inv_1957_01`. The audit trail afterwards read 75 invoices, 75 rows — and
+`decisions` read 76. One invoice had an `APPROVE` for a retry on record and no audit row
+of any kind, and `_already_worked` would have skipped it forever on the next resume.
+
+**Cause.** `_already_worked` unioned `audit_log` with `decisions`, and the reason was
+sound when it was written: an invoice the guardrail denied concluded with a decision row
+and no audited action, so reading the action table alone found 77 of 85 concluded
+invoices and would have re-worked the eight write-offs. Then `record_conclusion` and
+`record_silence` were added — a write-off, an escalation, and an invoice nothing was done
+to now each write their own row — and the premise quietly expired. Post-fix, a decision
+without an audit row can only mean the item died *between* the guardrail's answer and the
+tool call. That is the one case that must be re-worked, and the union was the one thing
+guaranteeing it never would be.
+
+```
+before record_conclusion:   decision, no audit row  →  "wrote it off"        →  skip
+after  record_conclusion:   decision, no audit row  →  "died mid-item"       →  RE-WORK
+                            (the query never noticed the meaning had flipped)
+```
+
+**Fix.** The query reads `audit_log` alone. Re-working is safe against the NPCI cap:
+`execute_recovery` writes its row through the `PostToolUse` hook, so an invoice with no
+row had no presentment, and the attempt budget is counted from `payment_attempts`, never
+from this query. The test that asserted the union now asserts its inverse, with the
+interrupted item as its fixture.
+
+**Lesson.** A fix elsewhere can invalidate the premise of a correct query without
+touching a line of it. The union was never wrong about the data; it was wrong about what
+the data had come to mean, and only a second interruption made that visible.
+
+---
+
+## 2026-09-03 · Calling one endpoint from another passed it a `Query` object
+
+**Symptom.** `GET /invoices/{id}/compliance` raised
+`TypeError: '<' not supported between instances of 'Query' and 'int'`, from a comparison
+inside `compliance.non_peak_window.next_slots` — a pure function with full test coverage
+that had never been given a non-integer in its life.
+
+**Cause.** The panel embedded the window snapshot by calling the handler directly:
+`"window": compliance_window()`. FastAPI resolves `n: int = Query(3, ge=1, le=12)` per
+*request*; called as an ordinary Python function, `n` is the `Query` object itself. The
+validation, the coercion, and the bounds all live in the request path, and nothing in
+this call went through it.
+
+**Fix.** The snapshot moved into a plain `_window(now, n)` that both the endpoint and the
+panel call, so the handler is only ever a handler. It also removed a second bug worth
+naming: the panel had been evaluating the rules `at` one moment and reporting the window
+at a slightly later one.
+
+**Lesson.** A FastAPI endpoint is not a reusable function. Anything two callers need goes
+under the handler, not through it.
+
+---
+
 ## Open
 
-- **`batch_v2` is 50/190.** The re-run that exercises full audit coverage halted at
-  `inv_1448_01` on the Claude account's own session limit, not on anything in this repo:
-  `You've hit your session limit · resets 7pm (Asia/Calcutta)`. The halt path behaved as
-  designed — reason recorded in the report line, 140 invoices named as not attempted,
-  resume command printed. `python -m agent.orchestrator --run-id batch_v2` picks it up
-  from `audit_log`. The Day-6 gate itself is met by `batch_v1` (190/190, unattended,
-  exit 0). What `batch_v2` adds is coverage: 50 invoices, 50 audit rows, zero decisions
-  without one — against `batch_v1`'s 168 rows for 190 invoices, which cannot be
-  backfilled and is not going to be.
+- **`batch_v2` is 75/190 and resuming.** The re-run that exercises full audit coverage has
+  now halted twice on the Claude account's own session limit, not on anything in this
+  repo — first at `inv_1448_01` (`resets 7pm`), then at `inv_1957_01` (`resets 12:20am`).
+  Both times the halt path behaved as designed: reason in the report line, the unattempted
+  invoices counted and named, resume command printed. The second halt is what surfaced the
+  resume-query defect above, so it paid for itself. The Day-6 gate itself is met by
+  `batch_v1` (190/190, unattended, exit 0). What `batch_v2` adds is coverage: 75 invoices,
+  75 audit rows, zero violations — against `batch_v1`'s 168 rows for 190 invoices, which
+  cannot be backfilled and is not going to be.
 - **S2S Recurring activation** — assumed unavailable. If it is granted, the live lane
   widens; the architecture does not change. Tracked in `docs/LIVE_LANE_FINDINGS.md`.

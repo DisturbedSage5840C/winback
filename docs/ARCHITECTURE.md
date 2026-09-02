@@ -125,7 +125,7 @@ allowed to move money" is answerable from the database, not only from the code.
 
 ## 05 — The read API
 
-FastAPI over `winback_reader`. Seven endpoints, all `GET`, and a test asserts that the
+FastAPI over `winback_reader`. Ten endpoints, all `GET`, and a test asserts that the
 set of HTTP verbs the app exposes is a subset of `{GET, HEAD}` — the grant is the
 enforcement, that test is the cheap second lock.
 
@@ -135,9 +135,26 @@ enforcement, that test is the cheap second lock.
 | `/runs` | `audit_log`, grouped. A run exists iff it wrote something unretractable |
 | `/runs/{id}/overview` | the `recovery_funnel` view, verbatim, plus a stop-reason breakdown |
 | `/runs/{id}/worklist` | `audit_log` ⋈ `exception_worklist` — what the run decided, per invoice |
+| `/runs/{id}/events` | `audit_log` ⋈ `decisions`, cursored on `event_id` — the live trace |
 | `/worklist` | `exception_worklist` filtered to `at_risk` — the queue still outstanding |
 | `/invoices/{id}` | facts, every attempt, every decision with its full `candidate_set`, the trail |
+| `/invoices/{id}/compliance` | `compliance/` itself — the rule functions, called |
+| `/compliance/window` | `compliance.non_peak_window` — where the clock is, and the countdown |
 | `/evaluation` | the four `eval_*` tables — the same rows `EVALUATION.md` is generated from |
+| `/config` | the key **id**, execution mode, and the model version that actually scored |
+
+**The compliance panel asks the rules; it does not restate them.**
+`/invoices/{id}/compliance` imports `compliance/` and calls the same pure functions the
+agent calls, for both a proposed retry and a proposed nudge. A panel that recomputed the
+1+3 cap or the peak-window arithmetic in TypeScript would be a second implementation of
+the law, free to drift from the one that gates the money — and the screen a reviewer
+trusts would then be the copy rather than the original. Nothing it does writes,
+schedules, or reserves: it is the guardrail answering a hypothetical at a moment.
+
+**The trace cursors on `event_id`, not on a timestamp.** `audit_log.event_id` is
+`BIGSERIAL` and the batch is a single writer, so ids commit in the order they are issued
+and a row already sent can never move under the cursor. Two rows can share a microsecond;
+a client resuming from `ts_utc` would either skip one or replay it.
 
 **No number is computed here that the database can compute.** An API that recalculated
 the funnel would be a second implementation of the evaluation, free to disagree with

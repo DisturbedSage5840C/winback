@@ -290,11 +290,13 @@ def test_resumption_reads_the_audit_trail_and_not_a_progress_file():
 
 
 @pytest.mark.db
-def test_a_written_off_invoice_counts_as_concluded():
-    """An invoice the guardrail denied produces a ``decisions`` row and no ``audit_log``
-    row — only the tools that *do* something are audited. Reading the action table alone
-    found 77 of the 85 invoices an interrupted batch had concluded and would have re-worked
-    the eight it wrote off, so the query unions both."""
+def test_an_invoice_that_died_between_the_decision_and_the_tool_is_re_worked():
+    """The query used to union ``decisions``, because a write-off concluded an invoice
+    without auditing anything. ``record_conclusion`` and ``record_silence`` closed that
+    hole, and the union then meant the opposite of what it said: a decision with no audit
+    row is now an item that died mid-flight — a session limit killed one at exactly this
+    point — and skipping it on resume would strand an approval with no action and no row
+    explaining the silence."""
     from core.db import read_connection
 
     with read_connection() as conn:
@@ -310,5 +312,5 @@ def test_a_written_off_invoice_counts_as_concluded():
         ).fetchone()
 
     if row is None:
-        pytest.skip("no decision-without-action in this database to assert against")
-    assert row["invoice_id"] in _already_worked(row["run_id"])
+        pytest.skip("no interrupted item in this database to assert against")
+    assert row["invoice_id"] not in _already_worked(row["run_id"])

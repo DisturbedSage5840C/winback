@@ -4,7 +4,7 @@
 > here disagrees with the repo, the repo is right and this file is stale — say so and
 > it gets fixed in the same turn.
 
-**As of:** 2 September 2026 · **Plan day:** 6 of 10 complete · **Head:** `9494307`,
+**As of:** 2 September 2026 · **Plan day:** 6 of 10 complete · **Head:** `1c22edf`,
 pushed to `DisturbedSage5840C/winback` (private) · **Deadline:** 5 September 2026.
 
 **Calendar position: one day behind, and the read-only backend from Day 7 is already

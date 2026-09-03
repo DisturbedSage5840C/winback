@@ -47,12 +47,14 @@ from claude_agent_sdk import (
 from agent.adapters.base import Adapter, ExecutionMode
 from agent.gate import make_money_gate
 from agent.hooks import AuditWriter, audit_matcher
-from agent.mcp_config import describe, razorpay_servers
+from agent.mcp_config import LADDER, Lane, open_lane
 from agent.tools import (
     DISALLOWED_TOOLS,
     GATED_TOOLS,
     PREAPPROVED_TOOLS,
+    RAZORPAY_SERVER,
     Workbench,
+    permitted_tools,
     winback_server,
 )
 from core.config import get_settings
@@ -138,6 +140,16 @@ class BatchReport:
     #: for which the loop wrote the row instead. Surfaced in the headline rather than
     #: buried, because it counts guardrail approvals the agent obtained and never spent.
     silent: int = 0
+    #: The Razorpay transport the batch ended on, and every step down it took to get
+    #: there. A degraded run is still a complete run — that is the whole point of the
+    #: ladder — but it is not the same run, and the report says so rather than letting
+    #: "190/190" imply the infrastructure held.
+    mcp_lane: str = "off"
+    demotions: tuple[str, ...] = ()
+
+    @property
+    def degraded(self) -> bool:
+        return bool(self.demotions)
 
     @property
     def audit_complete(self) -> bool:
@@ -153,12 +165,13 @@ class BatchReport:
         prior = f" (+{self.resumed} resumed)" if self.resumed else ""
         stop = f" · ⚠ HALTED: {self.halted}" if self.halted else ""
         quiet = f" · {self.silent} unacted" if self.silent else ""
+        fell = f" · ⚠ degraded to mcp:{self.mcp_lane}" if self.degraded else ""
         return (
             f"run {self.run_id} [{self.execution_mode}]: "
             f"{self.completed}/{self.invoices} invoices{prior} ({self.failed} errored) · "
             f"{self.executions} actions · ₹{self.recovered_paise / 100:,.0f} recovered · "
             f"{self.audit_rows} audit rows · {self.seconds:.0f}s · "
-            f"${self.total_cost_usd:.2f}{quiet}{gap}{stop}"
+            f"${self.total_cost_usd:.2f}{quiet}{fell}{gap}{stop}"
         )
 
 
@@ -176,6 +189,28 @@ FATAL_TO_THE_BATCH = (
     "credit balance",
     "insufficient credit",
 )
+
+
+#: Substrings that mark a failure as the Razorpay transport dying rather than the invoice
+#: being unworkable. Matched the same prose-sniffing way as :data:`FATAL_TO_THE_BATCH`,
+#: and for the same reason: an stdio child that is killed surfaces as a sentence, not a
+#: code. Deliberately broad — a false positive costs one wasted probe of a transport that
+#: turns out to be healthy, and the run continues on the lane it already had. A false
+#: negative costs the batch, which is the outcome the Day-8 drill exists to rule out.
+MCP_TRANSPORT_FAILURE = (
+    "mcp",
+    "docker",
+    "stdio",
+    "transport",
+    "server disconnected",
+    "connection closed",
+    "broken pipe",
+)
+
+
+def _looks_like_mcp_failure(exc: Exception) -> bool:
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(marker in text for marker in MCP_TRANSPORT_FAILURE)
 
 
 def _is_fatal_to_the_batch(exc: Exception) -> bool:
@@ -244,9 +279,11 @@ class _Tally:
     #: 85 of 190 invoices and one that worked all 190 must not print the same shape of
     #: line with different numbers in it.
     halted: str | None = None
+    #: Each step the Razorpay transport fell during this batch.
+    demotions: list[str] = field(default_factory=list)
 
 
-def _options(bench: Workbench, writer: AuditWriter, settings) -> ClaudeAgentOptions:
+def _options(bench: Workbench, writer: AuditWriter, settings, lane: Lane) -> ClaudeAgentOptions:
     """Everything that constrains one agent run.
 
     ``permission_mode="default"`` rather than anything more permissive: the money gate is
@@ -258,7 +295,18 @@ def _options(bench: Workbench, writer: AuditWriter, settings) -> ClaudeAgentOpti
     construction time, and the warning was correct. The gated tools are omitted here on
     purpose, so every call to them falls through to the callback.
     """
-    servers = {"winback": winback_server(bench), **razorpay_servers(settings)}
+    # `lane.servers`, not `razorpay_servers(settings)`: the lane is the transport that was
+    # probed and answered, which after a mid-run demotion is not the one `.env` names.
+    #
+    # And it is mounted only when a tool on it is reachable. On the simulated lane no
+    # Razorpay tool is permitted, so mounting the server started a Docker container per
+    # invoice that the gate would have refused to let the agent speak to — pure cost, and
+    # a run header that announced `mcp: local` about a transport the batch never used.
+    # The SDK does not raise when a mounted stdio server fails to start, so that claim
+    # was not merely unhelpful, it was unverified. See docs/WHAT_BROKE.md, 3 Sep.
+    permitted = permitted_tools(settings.execution_mode)
+    reachable = any(name.startswith(f"mcp__{RAZORPAY_SERVER}__") for name in permitted)
+    servers = {"winback": winback_server(bench), **(lane.servers if reachable else {})}
 
     # The SDK warns, once per run, that ``can_use_tool`` will not fire for the entries in
     # ``allowed_tools``. That is true and it is the design: the two tools listed there are
@@ -278,7 +326,7 @@ def _options(bench: Workbench, writer: AuditWriter, settings) -> ClaudeAgentOpti
         mcp_servers=servers,
         allowed_tools=list(PREAPPROVED_TOOLS),
         disallowed_tools=list(DISALLOWED_TOOLS),
-        can_use_tool=make_money_gate(bench, writer),
+        can_use_tool=make_money_gate(bench, writer, permitted),
         hooks={"PostToolUse": [audit_matcher(writer)]},
         permission_mode="default",
         max_turns=settings.max_turns_per_item,
@@ -364,7 +412,20 @@ async def run_batch(
         scorer=scorer, rates=rates, cohort=cohort, adapter=_adapter_for(settings)
     )
     writer = AuditWriter(bench=bench, run_id=run_id, arm="D")
-    options = _options(bench, writer, settings)
+
+    # Probed before a rupee is spent, so a run that was asked for `local` and got `remote`
+    # says so in its own header instead of being discovered later in the audit trail.
+    #
+    # Not probed at all when no Razorpay tool is permitted this run: the probe starts a
+    # throwaway container to earn the right to say `local`, and a lane no tool can reach
+    # is a lane the run did not use. Reporting `off` there is the only honest reading,
+    # and it is what `_options` will actually mount.
+    prefix = f"mcp__{RAZORPAY_SERVER}__"
+    if any(name.startswith(prefix) for name in permitted_tools(settings.execution_mode)):
+        lane = open_lane(settings)
+    else:
+        lane = Lane(requested=settings.mcp_mode, mode="off", servers={})
+    options = _options(bench, writer, settings, lane)
 
     invoice_ids = sorted(bench.cases)
     if limit is not None:
@@ -383,7 +444,14 @@ async def run_batch(
     pending = [invoice_id for invoice_id in invoice_ids if invoice_id not in done]
 
     if verbose:
-        print(f"run {run_id} · {len(invoice_ids)} invoices · {describe(settings)}")
+        print(f"run {run_id} · {len(invoice_ids)} invoices · {lane.describe()}")
+        # Said out loud rather than left as a silent difference between `.env` and the
+        # header. This is not a degradation — nothing failed — so it does not belong in
+        # `lane.demotions`, but a run that was configured for `local` and mounted nothing
+        # owes the reader the reason.
+        if settings.mcp_mode != "off" and lane.mode == "off" and not lane.degraded:
+            print(f"  (.env asks for mcp:{settings.mcp_mode}; no Razorpay tool is "
+                  f"permitted on the {settings.execution_mode} lane, so none is mounted)")
         if done:
             print(f"resuming: {len(done)} already concluded, {len(pending)} to work")
         print(f"executor: {bench.adapter.mode} · model {settings.agent_model}")
@@ -413,6 +481,50 @@ async def run_batch(
                 tally.silent += 1
                 writer.record_silence(invoice_id)
         except Exception as exc:  # broad on purpose — one bad invoice must not end the batch
+            # Before charging this to the invoice: was it the invoice at all? A Razorpay
+            # transport that died mid-batch will meet every remaining invoice too, so it
+            # is diagnosed once, demoted down the ladder, written into the audit trail
+            # against the invoice that hit it, and *this invoice is retried on the new
+            # lane* — the fault costs the batch a transport, not a recovery.
+            demoted = False
+            if lane.mode != "off" and _looks_like_mcp_failure(exc):
+                below = LADDER[LADDER.index(lane.mode) + 1] if lane.mode in LADDER else "off"
+                probed = open_lane(settings, start_at=below)
+                lane = Lane(
+                    requested=lane.requested,
+                    mode=probed.mode,
+                    servers=probed.servers,
+                    demotions=[*lane.demotions,
+                               f"{lane.mode} failed at {invoice_id} — {type(exc).__name__}",
+                               *probed.demotions],
+                )
+                options = _options(bench, writer, settings, lane)
+                writer.record_degradation(invoice_id, lane.demotions[-1], lane.mode)
+                tally.demotions.append(lane.demotions[-1] if lane.demotions else "")
+                demoted = True
+                if verbose:
+                    print(f"\n⚠ {lane.describe()}")
+                    print(f"  retrying {invoice_id} on the {lane.mode} lane\n")
+                try:
+                    summary, cost = await _run_one(invoice_id, now, options)
+                    tally.completed += 1
+                    tally.cost_usd += cost
+                    if invoice_id not in writer.covered:
+                        tally.silent += 1
+                        writer.record_silence(invoice_id)
+                except Exception as retry_exc:
+                    exc = retry_exc
+                    demoted = False
+
+            if demoted:
+                if verbose:
+                    recovered = sum(row.get("recovered_paise", 0) for row in bench.executions)
+                    print(
+                        f"[{index:>3}/{len(pending)}] {invoice_id} · "
+                        f"₹{recovered / 100:,.0f} so far · {summary[:96]}"
+                    )
+                continue
+
             # The batch is meant to complete unattended. An invoice that throws is
             # recorded and stepped over; ending the run would lose the 189 that worked.
             tally.failed += 1
@@ -463,6 +575,8 @@ async def run_batch(
         resumed=len(done),
         halted=tally.halted,
         silent=tally.silent,
+        mcp_lane=lane.mode,
+        demotions=tuple(lane.demotions),
     )
 
 

@@ -174,6 +174,6 @@ winback/
 ├── eval/          arms · counterfactual · report
 ├── agent/         orchestrator · tools · gate · hooks · mcp_config · adapters/
 ├── api/           main.py                      FastAPI, read-only
-├── dashboard/     Next.js
-└── scripts/       bootstrap.sh · run_demo.sh
+├── dashboard/     Vite + React + TS             read-only SPA over the API above
+└── scripts/       bootstrap.sh · run_demo.sh · probe_live_lane.py
 ```

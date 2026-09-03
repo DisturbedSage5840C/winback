@@ -14,7 +14,8 @@ are tested exhaustively elsewhere; what is tested here is the composition:
 from __future__ import annotations
 
 import inspect
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -92,6 +93,32 @@ def test_a_peak_window_redirects_rather_than_denies() -> None:
     assert decision.stop_reason == "peak_window"
     assert decision.suggested_slots, "a redirect with no slot to redirect to is a denial"
     assert all(slot > PEAK_SLOT for slot in decision.suggested_slots)
+
+
+@pytest.mark.parametrize("zone", [UTC, ZoneInfo("America/New_York"), IST])
+def test_the_window_rule_names_the_hour_in_ist_whatever_zone_it_was_asked_in(zone) -> None:
+    """The same instant, expressed three ways, must produce the same sentence.
+
+    ``authorizing_rule`` is not a debug string — it is copied verbatim into
+    ``decisions.authorizing_rule`` and onto the compliance chip, and it is the record a
+    reviewer reads to check the timing. Until 4 Sep it was formatted in whatever zone the
+    caller passed and labelled "IST" unconditionally, so a UTC caller wrote a permanent
+    record naming an hour 5h30m off — about the one rule that is entirely about the hour.
+    The verdict was never wrong, which is exactly why nothing caught it.
+    """
+    decision = evaluate(retry_request(execute_at=LEGAL_SLOT.astimezone(zone)), now=NOW)
+    assert decision.verdict is Verdict.APPROVE
+    assert "02:00 IST is outside peak hours" in decision.authorizing_rule
+
+
+@pytest.mark.parametrize("zone", [UTC, ZoneInfo("America/New_York"), IST])
+def test_a_redirect_names_both_hours_in_ist(zone) -> None:
+    """The hour it was refused at and the hour it is being moved to, in the same zone.
+    A redirect whose two timestamps are in different zones is worse than no timestamps."""
+    decision = evaluate(retry_request(execute_at=PEAK_SLOT.astimezone(zone)), now=NOW)
+    assert decision.verdict is Verdict.REDIRECT_TO_WINDOW
+    assert "11:00 IST is inside a peak window" in decision.authorizing_rule
+    assert "next legal slot 13:30 IST" in decision.authorizing_rule
 
 
 def test_an_approved_action_carries_no_slots() -> None:

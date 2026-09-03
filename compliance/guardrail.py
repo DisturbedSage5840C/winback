@@ -35,7 +35,7 @@ from enum import StrEnum
 from typing import Any
 
 from compliance import afa_threshold, consent_gate, npci_retry_cap, pre_debit_notice
-from compliance.non_peak_window import is_non_peak, next_slots
+from compliance.non_peak_window import IST, is_non_peak, next_slots
 from compliance.result import RuleResult, Verdict, most_restrictive
 from compliance.root_cause import RootCause, is_retryable
 
@@ -136,11 +136,21 @@ def _check_window(execute_at: datetime) -> RuleResult:
     redirected, and the slots that make a redirect actionable are produced by the
     same call.
     """
+    # Converted before it is formatted, not merely before it is judged. `is_non_peak`
+    # has always done its own conversion, so the *verdict* was never wrong — but the
+    # detail string used to `strftime` whatever zone the caller happened to hand in and
+    # then label it "IST" regardless, and that string is written verbatim into
+    # `decisions.authorizing_rule` and onto the compliance chip. A UTC caller therefore
+    # produced a permanent record that named the wrong hour about the one rule that is
+    # entirely about the hour. The batch passes IST-aware slots and so was never
+    # affected; the API panel passes `datetime.now(UTC)` and was, on every lookup.
+    # See docs/WHAT_BROKE.md, 4 Sep.
+    local = execute_at.astimezone(IST)
     if is_non_peak(execute_at):
         return RuleResult(
             rule=WINDOW_RULE,
             verdict=Verdict.APPROVE,
-            detail=f"{WINDOW_RULE}: {execute_at.strftime('%H:%M')} IST is outside peak hours",
+            detail=f"{WINDOW_RULE}: {local.strftime('%H:%M')} IST is outside peak hours",
             metadata={"execute_at": execute_at.isoformat()},
         )
 
@@ -149,8 +159,8 @@ def _check_window(execute_at: datetime) -> RuleResult:
         rule=WINDOW_RULE,
         verdict=Verdict.REDIRECT_TO_WINDOW,
         detail=(
-            f"{WINDOW_RULE}: {execute_at.strftime('%H:%M')} IST is inside a peak window; "
-            f"next legal slot {slots[0].strftime('%H:%M')} IST"
+            f"{WINDOW_RULE}: {local.strftime('%H:%M')} IST is inside a peak window; "
+            f"next legal slot {slots[0].astimezone(IST).strftime('%H:%M')} IST"
         ),
         stop_reason=PEAK_WINDOW,
         metadata={

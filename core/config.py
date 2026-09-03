@@ -126,7 +126,9 @@ def get_settings() -> Settings:
         razorpay_key_id=key_id,
         razorpay_key_secret=_env("RAZORPAY_KEY_SECRET") or None,
         mcp_mode=mcp_mode,  # type: ignore[arg-type]
-        mcp_toolsets=_env("RAZORPAY_MCP_TOOLSETS", "orders,payments,payment-links") or "",
+        # Space-separated, underscored — the only spelling razorpay/mcp accepts. The
+        # comma-joined `payment-links` that used to sit here made local mode unstartable.
+        mcp_toolsets=_env("RAZORPAY_MCP_TOOLSETS", "orders payments payment_links") or "",
         mcp_read_only=_env_bool("RAZORPAY_MCP_READ_ONLY", False),
         execution_mode=execution_mode,  # type: ignore[arg-type]
         live_call_budget=_env_int("WINBACK_LIVE_CALL_BUDGET", 50),

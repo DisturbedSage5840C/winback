@@ -56,7 +56,26 @@ Each row: call it, record the outcome verbatim, do not infer.
 | 8 | `create_plan` / `create_subscription` | **FAIL** (401) | `{"error": "Unauthorized"}` on **both read and write**, on `/plans` *and* `/subscriptions`. `/orders` returns 200 with the same credentials → product-level gating, not an auth problem |
 | 9 | `POST /v1/payments/create/recurring` | **EXPECTED** (400) | `BAD_REQUEST_ERROR · "The requested URL was not found on the server."` — with a control, §04.1 |
 | 10 | `POST /v1/invoices/:id/notify_by/:medium` | **PASS** (400) | `"Operation not allowed for Invoice in draft status."` — an *application* refusal, so the route exists. §04.2 |
-| 11 | `TOOLSETS` / `READ_ONLY` env flags | **PASS** (stdio) | default 41 tools · `READ_ONLY=true` → 25 (16 removed) · `TOOLSETS=orders` → 5 |
+| 11 | `TOOLSETS` / `READ_ONLY` env flags | **PASS** (stdio) — but see §04.3 | default 41 tools · `READ_ONLY=true` → 25 (16 removed) · `TOOLSETS=orders` → 5 |
+
+### 04.3 — Probe 11 proved less than it looked like it proved (added 3 Sep)
+
+Probe 11 passed exactly one toolset name, `orders`. One value cannot reveal a separator,
+and the multi-value string later written into `.env` on the strength of this row was
+comma-joined — which the image reads as a single toolset name and refuses to start on.
+`RAZORPAY_MCP_MODE=off` is the correct default for the batch, so nothing tried to start
+it again for a week. Re-probed properly on 3 Sep, against the same image:
+
+```text
+TOOLSETS=(unset)                      → 41 tools
+TOOLSETS=orders payments payment_links → 20 tools
+TOOLSETS=orders,payments              → exit 1, "toolset orders,payments does not exist"
+TOOLSETS=payment-links                → exit 1, not a toolset name (underscore, not hyphen)
+TOOLSETS=subscriptions                → exit 1, not a toolset in this image at all
+```
+
+**`TOOLSETS` is space-separated and the names use underscores.** The 20-tool set above
+contains every tool the live lane uses. Full account in `docs/WHAT_BROKE.md`, 3 Sep.
 
 ### 04.1 — Probe 9 is not a wrong URL, and here is the control
 

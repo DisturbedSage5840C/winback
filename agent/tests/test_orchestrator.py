@@ -15,16 +15,29 @@ import pytest
 
 from agent.adapters.base import ExecutionMode
 from agent.adapters.simulated import SimulatedAdapter
+from agent.mcp_config import Lane
 from agent.orchestrator import (
     LIVE_CALLS_PER_INVOICE,
     BatchReport,
     _adapter_for,
     _already_worked,
     _is_fatal_to_the_batch,
+    _looks_like_mcp_failure,
     _options,
 )
-from agent.tools import GATED_TOOLS, PREAPPROVED_TOOLS
+from agent.tools import (
+    ALLOWED_TOOLS,
+    GATED_TOOLS,
+    PREAPPROVED_TOOLS,
+    RAZORPAY_READ_TOOLS,
+    RAZORPAY_SERVER,
+    permitted_tools,
+)
 from core.config import ConfigError, get_settings
+
+#: The lane these option tests run under. `off` mounts no Razorpay server, which keeps
+#: them about the SDK options themselves — no Docker, no network, nothing to probe.
+_OFF_LANE = Lane(requested="off", mode="off", servers={})
 
 KEY = "rzp_test_ABC123"
 SECRET = "s3cr3t_value"  # noqa: S105 — a fake credential, never a real one
@@ -138,7 +151,9 @@ def test_the_gated_tools_are_never_handed_to_the_sdk(settings, scorer, rates):
     from agent.tools import workbench_from_dataset
 
     bench = workbench_from_dataset(scorer=scorer, rates=rates, cohort="test")
-    options = _options(bench, AuditWriter(bench=bench, run_id="opts", arm="D"), settings)
+    options = _options(
+        bench, AuditWriter(bench=bench, run_id="opts", arm="D"), settings, _OFF_LANE
+    )
 
     assert set(options.allowed_tools) == set(PREAPPROVED_TOOLS)
     assert set(options.allowed_tools).isdisjoint(GATED_TOOLS)
@@ -154,7 +169,9 @@ def test_the_run_does_not_inherit_local_claude_code_settings(settings, scorer, r
     from agent.tools import workbench_from_dataset
 
     bench = workbench_from_dataset(scorer=scorer, rates=rates, cohort="test")
-    options = _options(bench, AuditWriter(bench=bench, run_id="opts", arm="D"), settings)
+    options = _options(
+        bench, AuditWriter(bench=bench, run_id="opts", arm="D"), settings, _OFF_LANE
+    )
 
     assert options.setting_sources == []
     assert options.max_turns == settings.max_turns_per_item
@@ -167,8 +184,87 @@ def test_the_agent_is_bounded_in_turns(settings, scorer, rates):
     from agent.tools import workbench_from_dataset
 
     bench = workbench_from_dataset(scorer=scorer, rates=rates, cohort="test")
-    options = _options(bench, AuditWriter(bench=bench, run_id="opts", arm="D"), settings)
+    options = _options(
+        bench, AuditWriter(bench=bench, run_id="opts", arm="D"), settings, _OFF_LANE
+    )
     assert 1 <= options.max_turns <= 12
+
+
+# ------------------------------------------------- what the lane is allowed to mount
+
+
+def _options_for(settings, scorer, rates, lane):
+    from agent.hooks import AuditWriter
+    from agent.tools import workbench_from_dataset
+
+    bench = workbench_from_dataset(scorer=scorer, rates=rates, cohort="test")
+    return _options(bench, AuditWriter(bench=bench, run_id="opts", arm="D"), settings, lane)
+
+
+def test_a_lane_no_tool_can_reach_is_not_mounted(settings, scorer, rates):
+    """The Day-8 drill's actual finding. On the simulated lane no Razorpay tool is
+    permitted, so mounting the server spent a Docker container per invoice on a transport
+    the gate would have refused to let the agent speak to — and the run header announced
+    `mcp: local` about it. The SDK does not raise when a mounted stdio server fails to
+    start, so that claim was not just useless, it was never checked."""
+    live_lane = Lane(requested="local", mode="local", servers={"razorpay": {"type": "stdio"}})
+    options = _options_for(replace(settings, execution_mode="simulated"), scorer, rates, live_lane)
+
+    assert set(options.mcp_servers) == {"winback"}
+
+
+def test_the_live_lane_mounts_razorpay_and_permits_only_reads(settings, scorer, rates):
+    """The other half: the mount is real where the ids are. Every permitted Razorpay tool
+    is a fetch — no send, no create, no capture — because anything that moves money or
+    reaches a customer goes through `execute_recovery`, which cannot run without a
+    guardrail approval already on record."""
+    live_lane = Lane(requested="local", mode="local", servers={"razorpay": {"type": "stdio"}})
+    options = _options_for(replace(settings, execution_mode="live"), scorer, rates, live_lane)
+
+    assert set(options.mcp_servers) == {"winback", "razorpay"}
+
+    razorpay = [t for t in permitted_tools("live") if t.startswith(f"mcp__{RAZORPAY_SERVER}__")]
+    assert razorpay == list(RAZORPAY_READ_TOOLS)
+    assert all("fetch" in name for name in razorpay)
+
+    # And none of them is pre-approved: a read still passes the gate, which is what makes
+    # `record_denial` able to see a tool the Razorpay server grew since this was written.
+    assert set(options.allowed_tools).isdisjoint(razorpay)
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        RuntimeError("MCP server disconnected"),
+        ConnectionError("stdio transport closed unexpectedly"),
+        OSError("[Errno 32] Broken pipe writing to docker"),
+    ],
+)
+def test_a_transport_death_is_charged_to_the_transport(exc):
+    """Which of the two things just failed — this invoice, or the pipe every remaining
+    invoice also has to use? Getting that wrong the safe way costs one recovery; getting
+    it wrong the other way charges 190 invoices to a dead container."""
+    assert _looks_like_mcp_failure(exc) is True
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        ValueError("invoice inv_0007_01 has no attempts"),
+        KeyError("customer_hash"),
+        ZeroDivisionError("division by zero"),
+    ],
+)
+def test_an_invoice_that_fails_on_its_own_merits_does_not_demote_the_lane(exc):
+    """A demotion is one-way and costs the rest of the batch its best transport, so a bug
+    in one invoice's data must not spend it."""
+    assert _looks_like_mcp_failure(exc) is False
+
+
+def test_the_simulated_batch_sees_the_tool_set_it_always_saw(settings, scorer, rates):
+    """Load-bearing for every committed number: enabling the reads on the live lane must
+    not have changed what the 500-invoice batch behind `docs/EVALUATION.md` could do."""
+    assert permitted_tools("simulated") == ALLOWED_TOOLS
 
 
 # ------------------------------------------------------------------ the report

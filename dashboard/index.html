@@ -1,16 +1,18 @@
 <!doctype html>
-<html lang="<!-- figma:lang -->">
+<html lang="en">
   <head>
-    <!-- figma:head-start -->
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title><!-- figma:title --></title>
-    <!-- figma:head-end -->
+    <!-- The description and og: tags are injected by vite.config.ts from
+         .figma/make/site.json — set them there, not here, or you get two of each.
+         `addBypassLinks` in that file stays false on purpose: the bypass link the
+         plugin emits is `<a href="#root">`, which under HashRouter is a route
+         change to /root, not a scroll. -->
+    <title>Winback — recover the money you’re legally allowed to</title>
+    <meta name="theme-color" content="#fbfcfe" />
   </head>
   <body>
-    <!-- figma:body-start -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <!-- figma:body-end -->
   </body>
 </html>

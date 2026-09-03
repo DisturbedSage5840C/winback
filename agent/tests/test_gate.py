@@ -14,7 +14,7 @@ import pytest
 from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
 
 from agent.gate import DENIED_TOOL, MALFORMED, NO_APPROVAL, make_money_gate
-from agent.tools import GUARDRAIL_TOOL, MONEY_TOOL, Workbench, approval_key
+from agent.tools import GUARDRAIL_TOOL, MONEY_TOOL, Workbench, approval_key, permitted_tools
 from compliance.guardrail import ActionKind
 from eval.counterfactual import DECISION_LAG_HOURS
 
@@ -51,6 +51,29 @@ async def test_an_ungated_tool_is_allowed_without_an_approval(gate):
     """Asking the guardrail is not itself a privileged act."""
     result = await _ask(gate, GUARDRAIL_TOOL, invoice_id="inv_0001_01", action="retry")
     assert isinstance(result, PermissionResultAllow)
+
+
+async def test_a_razorpay_read_is_refused_on_the_simulated_lane(gate):
+    """Every id in the simulated database is one the seeder invented, so a fetch there
+    can only 404. The gate is where that is decided, not the prompt."""
+    result = await _ask(gate, "mcp__razorpay__fetch_payment", payment_id="pay_sim_0007_01")
+    assert isinstance(result, PermissionResultDeny)
+    assert DENIED_TOOL in result.message
+
+
+async def test_a_razorpay_read_is_allowed_on_the_live_lane_but_a_send_is_not(bench):
+    """Widening the list for the live lane widens it by reads only. `payment_link_notify`
+    is the tool that would message a real person without a consent check, and it stays
+    denied on both lanes — the live lane's sends run through `execute_recovery`, which
+    cannot fire without a guardrail approval already on record."""
+    live_gate = make_money_gate(bench, None, permitted_tools("live"))
+
+    allowed = await _ask(live_gate, "mcp__razorpay__fetch_payment", payment_id="pay_ABC")
+    assert isinstance(allowed, PermissionResultAllow)
+
+    refused = await _ask(live_gate, "mcp__razorpay__payment_link_notify", id="plink_ABC")
+    assert isinstance(refused, PermissionResultDeny)
+    assert DENIED_TOOL in refused.message
 
 
 # --------------------------------------------------------------- the money gate

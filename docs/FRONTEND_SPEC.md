@@ -33,14 +33,26 @@ thesis without a word of narration. Build toward that scene first if time runs s
 
 | Layer | Choice | Why |
 |---|---|---|
-| Framework | Next.js 15, App Router, TypeScript strict | matches the plan; RSC for the read-only data fetches, client components only where interaction/motion needs them |
+| Framework | **Vite 8 + React 19 + TypeScript strict**, routed by `react-router-dom` (`HashRouter`) | see the note below — this spec originally called for Next.js 15 App Router and the delivered app is a Vite SPA |
 | Styling | Tailwind CSS v4 (CSS-first config, no `tailwind.config.js`) | fastest path to the exact palette below with zero abstraction tax |
 | Charts | Recharts | funnel bars, calibration reliability diagram, four-arm comparison — all standard chart shapes it does natively |
 | Motion | Framer Motion (`motion` package) | the four animations in §06; respects `prefers-reduced-motion` everywhere |
-| Data fetching | native `fetch` against the FastAPI base URL, `NEXT_PUBLIC_API_BASE` | no client library needed — ten endpoints, all `GET`, no auth |
+| Data fetching | native `fetch` against the FastAPI base URL, `VITE_API_BASE` (defaults to `http://localhost:8000`) | no client library needed — ten endpoints, all `GET`, no auth |
 | Live updates | polling `GET /runs/{id}/events?since=<cursor>` every 1.5s while a run page is open | see §07; no websocket exists on the backend and none should be built for this |
 | Fonts | Satoshi (Fontshare) for display + UI, `Manrope, system-ui` fallback stack | matches the buildathon micro-site's own type, per the plan |
-| State | React server components + `useState`/`useSWR`-free polling hooks; no Redux/Zustand — the app has no client state worth a store | keep it simple, nothing here needs global state |
+| State | local `useState` + a small `useAsync` hook; no Redux/Zustand — the app has no client state worth a store | keep it simple, nothing here needs global state |
+
+**Stack note — why this is Vite and not Next.js.** The rows above were rewritten on Day 7
+to describe what actually shipped. The dashboard was scaffolded from a Figma Make export,
+which is a Vite + React SPA, and porting it to the App Router would have cost most of a
+day to buy nothing this app uses: there is no SEO surface, no server-side secret, no
+mutation, and no route that benefits from RSC — every page is an authenticated-by-nobody
+read of ten `GET` endpoints on a FastAPI backend that must be running anyway. `HashRouter`
+is deliberate for the same reason: the built `dist/` is a pile of static files that opens
+correctly from `file://` or any static host with no rewrite rules to configure, which
+matters more for a judge cloning the repo than clean URLs do. Everything else in this
+spec — the palette, the type, the four animations, the motion budget, the endpoint
+contracts, the page structure — was implemented as written and is unaffected.
 
 Run the `dataviz` skill before writing the first chart and the `frontend-design` skill
 before the first component, per the plan. Both are already-loaded skills in this
@@ -372,17 +384,34 @@ an error.
 
 ## 08 — What "no mocks" means in practice, checked
 
-- Every fetch call targets `NEXT_PUBLIC_API_BASE` (set to `http://localhost:8000` in
-  `.env.local` for dev) — no `mockData.ts`, no fixture JSON checked into `dashboard/`.
+- Every fetch call targets `VITE_API_BASE` (defaulting to `http://localhost:8000`, so a
+  fresh clone needs no `.env` at all) — no `mockData.ts`, no fixture JSON checked into
+  `dashboard/`.
 - Empty-database states (fresh clone, before any batch has run) render real empty states
   from real empty API responses (`GET /runs` → `[]`), never a hardcoded "example" row.
-- `scripts/run_demo.sh` (Day 9) has to be able to seed the database, run a batch, and have
+- `scripts/run_demo.sh` has to be able to seed the database, run a batch, and have
   this dashboard render that exact run with no code change — that is the actual definition
   of "no mocks" the plan's Day-7 gate is checking.
+
+**Verified on Day 7, and it cost something.** The build originally shipped a 473-line
+`src/data/demo.ts` fallback that `api.ts` silently switched to whenever a fetch threw —
+which meant the app could render a complete, entirely fictional ₹ figure while the backend
+was down, directly under a footer reading *"every number traces to an API response — no
+mocks."* That file is deleted. `api.ts` now has no fallback branch at all: an unreachable
+API produces a named error and an empty region, never a plausible number. Two smaller
+consequences of the same rule: the header badge reports live `GET /health` (including the
+role it connected as and the append-only trigger count) rather than whether a build-time
+env var was set, and the compliance page's search placeholder shows a real invoice id
+pulled off `GET /worklist` instead of an invented one.
 
 ---
 
 ## 09 — Master prompt
+
+**Historical.** This is the prompt the dashboard was actually built from, kept verbatim as
+a record. It says Next.js because that was the intent on Day 6; the scaffold turned out to
+be a Vite SPA and §01's stack note explains why that was left alone. Read §01, not this
+section, for what the code is.
 
 Paste everything between the lines into a fresh Claude Code session with this repo as the
 working directory.

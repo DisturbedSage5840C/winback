@@ -1,5 +1,6 @@
 {
-  "description": "This web application streamlines user engagement by facilitating targeted marketing campaigns and customer retention strategies, enhancing overall business performance.",
+  "title": "Winback — recover the money you’re legally allowed to",
+  "description": "Compliance-gated subscription recovery agent for UPI Autopay and card mandates. Every number on screen is read from the Winback API.",
   "robots": {
     "index": false
   },

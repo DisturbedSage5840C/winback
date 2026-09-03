@@ -420,7 +420,20 @@ def invoice_compliance(invoice_id: str, at: datetime | None = None) -> dict[str,
 
     Nothing here writes, schedules, or reserves anything: it is the guardrail answering a
     hypothetical at a moment, which is exactly what a panel should be showing.
+
+    **``at`` is the moment, and it is the whole reason this endpoint is interesting.**
+    The rules are pure functions of facts and a clock, so supplying the clock is how a
+    reviewer asks "what would the guardrail have said while this invoice was live"
+    without a second implementation to trust. Until 3 Sep the parameter existed and did
+    not work: a naive timestamp reached ``consent_gate``, which correctly refuses to
+    guess a timezone, and the panel returned a 500 instead of an answer. It is normalised
+    here rather than made mandatory, because a hand-typed URL will not carry an offset
+    and ``+`` does not survive a query string unescaped. UTC is the only defensible
+    reading of a bare timestamp in a system whose every stored column is UTC.
     """
+    if at is not None and at.tzinfo is None:
+        at = at.replace(tzinfo=UTC)
+
     facts = _row(
         """
         SELECT w.*, c.consent_updated_at

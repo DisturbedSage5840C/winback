@@ -74,13 +74,55 @@ GATED_TOOLS = (f"mcp__{SERVER_NAME}__simulated_notify", MONEY_TOOL)
 #: is the enforcement point.
 PREAPPROVED_TOOLS = (f"mcp__{SERVER_NAME}__assess_recoverability", GUARDRAIL_TOOL)
 
-#: Every tool the agent may call at all — what the gate checks against. Razorpay's MCP
-#: tools are mounted for reads and are deliberately absent: the live lane runs through
-#: ``execute_recovery`` so that every real API call is preceded by a guardrail approval.
-#: Note what is *not* present — ``mcp__razorpay__payment_link_notify`` and every other
-#: send. Anything off this list is denied, so a new tool appearing on the Razorpay server
-#: is refused by default rather than silently permitted.
+#: Every tool the agent may call at all — what the gate checks against. Anything off this
+#: list is denied, so a new tool appearing on the Razorpay server is refused by default
+#: rather than silently permitted.
 ALLOWED_TOOLS = (*PREAPPROVED_TOOLS, *GATED_TOOLS)
+
+#: The name the Razorpay MCP server is mounted under, in either transport.
+RAZORPAY_SERVER = "razorpay"
+
+#: The Razorpay MCP tools the agent may call, and every one of them is a read.
+#:
+#: This list used to be empty while the comment above ``ALLOWED_TOOLS`` claimed the
+#: server was "mounted for reads" — so the container was started once per invoice and
+#: every tool on it was refused by the gate. The Day-8 failure drill found it: killing
+#: the container mid-batch changed nothing, because nothing had ever spoken to it. The
+#: choice was to stop mounting a server nobody could call or to make the claim true.
+#: It is true now.
+#:
+#: Note what is *not* here. ``payment_link_notify``, ``create_payment_link``,
+#: ``create_order``, ``capture_payment``, ``submit_otp`` — every tool that moves money or
+#: reaches a customer is absent, and stays absent. Those run through ``execute_recovery``
+#: so that a guardrail approval is on record *before* the call, which is a property no
+#: amount of prompting can give you. Reads need no such approval: the worst outcome of a
+#: wrong ``fetch_payment`` is a wasted turn.
+RAZORPAY_READ_TOOLS = tuple(
+    f"mcp__{RAZORPAY_SERVER}__{name}"
+    for name in (
+        "fetch_payment",
+        "fetch_order",
+        "fetch_order_payments",
+        "fetch_all_payments",
+        "fetch_payment_link",
+        "fetch_tokens",
+    )
+)
+
+
+def permitted_tools(execution_mode: str) -> tuple[str, ...]:
+    """What the gate will allow, given which executor is running.
+
+    The Razorpay reads are added on the live lane only. In simulated mode every id in the
+    database is one the seeder invented — ``fetch_payment('pay_sim_0007_01')`` cannot do
+    anything but 404, and an agent that learns its reads always fail is worse than one
+    that was never offered them. The 500-invoice batch that produces ``EVALUATION.md``
+    therefore sees exactly the tool set it has always seen, which is also why enabling
+    this could not move a single committed number.
+    """
+    if execution_mode == "live":
+        return (*ALLOWED_TOOLS, *RAZORPAY_READ_TOOLS)
+    return ALLOWED_TOOLS
 
 #: Built-in tools the batch has no business touching. A recovery agent that could read
 #: the filesystem or run a shell could reach the model artifacts, the ``.env`` file and

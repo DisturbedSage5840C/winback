@@ -1223,6 +1223,157 @@ under the handler, not through it.
 
 ---
 
+## 2026-09-03 · The local MCP had never once started, and nothing noticed
+
+**Symptom.** The new lane ladder's first real use, on its first probe:
+
+```
+local unreachable — exit 1: failed to create toolsets:
+toolset orders,payments,payment-links,subscriptions does not exist
+```
+
+`RAZORPAY_MCP_MODE=local` had never worked. Not since Day 1.
+
+**Cause.** Three things wrong in one environment variable. `razorpay/mcp` reads
+`TOOLSETS` as a **space**-separated list, so a comma-joined value is one toolset name;
+the valid name is `payment_links`, not `payment-links`; and `subscriptions` is not a
+toolset in the image at all. Bisected against the real image — `orders payments
+payment_links` starts and exposes 20 of the default 41 tools, including every tool the
+live lane uses.
+
+**Why it survived a week.** Day 1's probe 11 established that `TOOLSETS` *works* by
+passing exactly one value, `orders`. One value cannot reveal a separator. The multi-value
+string was then written by hand from that finding, and `RAZORPAY_MCP_MODE=off` — the
+correct default for the batch — meant nothing ever tried to start it again.
+
+**Fix.** Corrected in `.env` and `.env.example`, and the default in `core/config.py`,
+which still held the comma-joined `payment-links` spelling. Commas are now normalised to
+spaces in `local_server()`, because the failure is silent in the worst way: local mode
+does not start, the ladder falls to remote, and everything keeps working well enough that
+nobody looks. `test_comma_joined_toolsets_are_normalised_to_spaces` holds it.
+
+**Lesson.** A config value proven with one element is not proven. The separator is the
+part that breaks, and it is exactly the part a single-element test cannot see.
+
+---
+
+## 2026-09-03 · The failure drill found that there was nothing to fail
+
+**Symptom.** The Day-8 drill, run as the plan specifies it — `docker kill` the local MCP
+mid-batch — did nothing at all. All 8 invoices completed, no demotion, no audit row, no
+error. The fallback ladder built that morning had not fired because nothing had gone
+wrong.
+
+**Cause.** Two separate defects, discovered in the course of explaining the first.
+
+*One: the Razorpay MCP was mounted where no tool could reach it.* `ALLOWED_TOOLS` is an
+allow-list and the gate denies everything off it, and not one Razorpay tool was on it. The
+live adapter talks to `api.razorpay.com` over REST, not over MCP. So every invoice started
+a Docker container, the gate refused to let the agent speak to it, and the container was
+thrown away — and killing it mid-batch was killing something the run had never used. The
+comment above `ALLOWED_TOOLS` said the server was "mounted for reads", which had been the
+intent and was never the behaviour.
+
+*Two: the SDK does not surface a dead mount.* Verified directly, with the probes stubbed
+healthy and the image pointed at `razorpay/mcp:does-not-exist-drill`: the batch ran to
+completion, concluded its invoice normally, and reported `lane: local`. No exception
+reached the orchestrator. That is worse than a wasted container — it means the lane named
+in the run header and stored in `BatchReport.mcp_lane` was an unverified claim, in a
+system whose entire argument is that its records are trustworthy.
+
+**Fix.** The mount now follows reachability in both directions:
+
+- `permitted_tools(execution_mode)` adds six Razorpay **reads** — `fetch_payment`,
+  `fetch_order`, `fetch_order_payments`, `fetch_all_payments`, `fetch_payment_link`,
+  `fetch_tokens` — on the live lane, making the "mounted for reads" claim true. Every
+  send and every create stays denied on both lanes; those run through `execute_recovery`,
+  which cannot fire without a guardrail approval already on record.
+- The reads are **live-only**. In simulated mode every id is one the seeder invented, so a
+  fetch can only 404. The 500-invoice batch behind `docs/EVALUATION.md` therefore sees the
+  identical tool set it has always seen, which is why not one committed number moved.
+- `run_batch` no longer probes, and `_options` no longer mounts, a lane no permitted tool
+  can reach — so a simulated run reports `off` and says why, instead of asserting `local`
+  about a transport it never opened.
+
+**And the drill was rebuilt around what is actually observable.**
+`scripts/failure_drill.sh` now runs two phases on the live lane. Phase 1 kills the
+transport *before* the run reaches it, by asking for a toolset the image does not have —
+the exact shape of the bug above. The preflight probe catches it, the lane steps down to
+remote, and the batch finishes; all three are asserted. Phase 2 is the plan's literal
+`docker kill` mid-batch, and it asserts only that the cohort still completes with a full
+audit trail — it does **not** require a demotion, because the SDK will not report one
+unless a Razorpay call happened to be in flight. Both phases pass:
+
+```
+── phase 1 · the local MCP cannot start
+  ✓ the preflight probe caught it and the lane stepped down
+  ✓ the run report names the lane it finished on
+  ✓ the batch finished its cohort with a complete audit trail (exit 0)
+── phase 2 · the local MCP is killed mid-batch
+  ✓ the transport was killed while the batch was working
+  ✓ the batch finished anyway (exit 0)
+  · 2 of 2 invoices concluded
+```
+
+**Lesson.** The drill was worth more for failing than it would have been for passing. A
+fallback that cannot be observed to fire is indistinguishable from one that does not
+exist, and "the kill changed nothing" was the only symptom that would ever have exposed
+either defect. Injecting a fault you are confident about is how you find out that the
+thing you were protecting was not plugged in.
+
+---
+
+## 2026-09-04 · The window rule wrote the wrong hour into the permanent record
+
+**Believed.** The compliance panel was the last thing left to point a camera at, and it
+worked: paste a cap-exhausted invoice, get a red `DENY` with a five-rule breakdown. While
+reading one of those breakdowns to write the shot list, the window rule said
+`non_peak_window: 20:37 IST is outside peak hours`. Peak is 17:00–21:30 IST. 20:37 is
+inside it. Either the rule was broken or the sentence was.
+
+**Actually true.** The sentence was. `_check_window` formatted `execute_at` with a bare
+`strftime('%H:%M')` — which renders in whatever timezone the caller's datetime carries —
+and then appended the literal string `IST` unconditionally. `is_non_peak` has always done
+its own conversion, so **the verdict was never wrong**; only the words were. The real IST
+time was 02:07, comfortably non-peak, and the approval was correct.
+
+The reason it survived twelve days is that the two callers disagree in a way that hid it.
+`ml/policy.py` enumerates candidate slots via `non_peak_window.next_slots`, which returns
+IST-aware datetimes — so every one of the 428 committed `decisions` rows was formatted in
+IST and is correct. `api/main.py` passes `datetime.now(UTC)`, so the compliance panel was
+wrong on **every lookup it had ever served**, by 5h30m, and had been since the endpoint
+was written. No test caught it because every guardrail test constructs its fixtures with
+`tzinfo=IST`, where the bug is invisible by construction.
+
+**Cost.** Twenty minutes, and only because a peak-hour string on screen contradicted a
+rule I happened to know by heart. It would have cost far more on camera: the one number a
+reviewer can check against a published NPCI window, wrong, in the middle of the beat
+whose entire argument is that the record can be trusted.
+
+**Changed.**
+
+- `compliance/guardrail.py` converts to IST before formatting, for both the approval and
+  the redirect sentence — and for the suggested slot in the redirect, so a redirect
+  cannot name its two timestamps in two different zones.
+- Two parametrized tests assert the same instant expressed as UTC, `America/New_York` and
+  IST produces one identical sentence. The fixtures deliberately do *not* all use IST,
+  which is the property the old suite was missing rather than a bug it failed to catch.
+- Separately, `at` on `/invoices/{id}/compliance` was documented and unusable: a naive
+  timestamp reached `consent_gate`, which correctly refuses to guess a timezone, and the
+  panel returned a 500. It now normalises to UTC, and the dashboard exposes the control —
+  which is what makes a frozen dataset answerable at the moment each invoice was live
+  instead of only against a wall clock that has left every consent window behind.
+
+**Lesson.** A string that is only ever read by a human is still an assertion, and this one
+was load-bearing: `authorizing_rule` is copied verbatim into `decisions` and onto the
+chip. The verdict being right is not evidence the record is right, and a rule about time
+is exactly where a timezone will be assumed rather than converted. The tests all passed
+because they all shared the one assumption that made the bug invisible — every fixture in
+IST. Parametrizing over zones costs one line and is the only thing that would have found
+it.
+
+---
+
 ## Open
 
 - **`batch_v2` is 75/190 and resuming.** The re-run that exercises full audit coverage has

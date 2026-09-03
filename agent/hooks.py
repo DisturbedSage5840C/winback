@@ -211,12 +211,19 @@ class AuditWriter:
         outcome: str | None = None,
         stop_reason: str | None = None,
         violation: bool = False,
+        covers: bool = True,
     ) -> None:
-        """One thing that happened — or one thing that was refused."""
+        """One thing that happened — or one thing that was refused.
+
+        ``covers=False`` writes the row without counting the invoice as concluded, for
+        the rare event that is about an invoice without settling it. See
+        :meth:`record_degradation`, the only caller that needs it.
+        """
         invoice_id = payload.get("invoice_id")
         if not invoice_id:
             return
-        self.covered.add(invoice_id)
+        if covers:
+            self.covered.add(invoice_id)
 
         action = payload.get("action")
         execute_at = payload.get("execute_at")
@@ -354,6 +361,53 @@ class AuditWriter:
             trigger="batch_scan",
             outcome="blocked",
             stop_reason="approval_granted_not_spent" if unspent else "no_conclusion_reached",
+        )
+
+    def record_degradation(self, invoice_id: str, reason: str, new_mode: str) -> None:
+        """The Razorpay transport died and the batch stepped down to another one.
+
+        Written against the invoice that hit the fault rather than as a run-level event,
+        for two reasons. The schema's ``subject_type`` is one of subscription / invoice /
+        attempt / customer — there is no ``run`` subject and inventing one to hold a piece
+        of operational telemetry would loosen a constraint that exists to keep every audit
+        row pointing at something real. And the attribution is honest as it stands: the
+        degradation was *observed* while working this invoice, at a knowable time, and
+        this invoice is the one whose retry happened on different infrastructure. A
+        reviewer reading the trail top to bottom sees exactly where the run changed
+        underneath it.
+
+        ``outcome='deferred'``, and neither ``'blocked'`` nor ``'escalated'``. Nothing
+        about this invoice was refused — no rule fired, no cap was hit, and the retry
+        that follows may well recover the money — so ``'blocked'`` would put a
+        violation-shaped row in the trail describing an event with no compliance content
+        at all. ``'escalated'`` is wrong for a subtler reason: ``recovery_funnel`` counts
+        it straight into the number the dashboard's compliance strip renders as
+        *Escalated*, so a Docker container dying would have read on screen as the
+        guardrail sending a payment to a human. ``'deferred'`` reaches the funnel only
+        through ``stopped``, via the ``stop_reason`` below — which is exactly where an
+        operator should find it, and which makes the drill's evidence visible in the UI
+        with no frontend change at all.
+
+        ``covers=False``: this row is *about* the invoice but is not a conclusion for it.
+        Letting it mark the invoice covered would suppress the ``record_silence`` check on
+        the retry that follows, and an invoice that came back from a demotion with an
+        unspent approval would go unrecorded — the exact hole ``record_silence`` exists
+        to close, reopened by the machinery meant to survive a failure.
+        """
+        case = self.bench.cases.get(invoice_id)
+        self.record_action(
+            {
+                "invoice_id": invoice_id,
+                "customer_hash": case.customer.customer_hash if case else None,
+                "amount_paise": case.invoice.amount_paise if case else None,
+                "action": None,
+                "detail": f"razorpay mcp transport degraded to {new_mode}: {reason}",
+                "execution_mode": str(self.bench.adapter.mode),
+            },
+            trigger="mcp_degraded",
+            outcome="deferred",
+            stop_reason=f"mcp_degraded_to_{new_mode}",
+            covers=False,
         )
 
     def record_denial(self, tool_name: str, input_data: dict[str, Any], reason: str) -> None:

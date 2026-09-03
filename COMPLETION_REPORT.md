@@ -4,37 +4,44 @@
 > here disagrees with the repo, the repo is right and this file is stale — say so and
 > it gets fixed in the same turn.
 
-**As of:** 3 September 2026 · **Plan day:** 7 of 10 — frontend delivered and being
-verified page by page against the live API ·
-**Head:** `fa2cff2` + this prompt's commit, pushed to `DisturbedSage5840C/winback` (private) ·
+**As of:** 4 September 2026 · **Plan day:** 8 of 10 — **Day 7 and Day 8 are both
+complete and the MVP checkpoint is green** ·
+**Head:** `56c0909` + this prompt's commit, pushed to `DisturbedSage5840C/winback` (private) ·
 **Deadline:** 5 September 2026.
 
-**The frontend arrived as a Figma-Make export and is being hardened one page at a
-time, against the running FastAPI backend, not against assumptions.** You delivered
-`frontend.zip` — a Vite 8 / React 19 / TypeScript 5.7 / Tailwind v4 / Framer Motion
-build (`dashboard/`), a stack deviation from `FRONTEND_SPEC.md`'s Next.js spec that is
-still noted as open in §04. Every page shipped with the same defect shape: its
-TypeScript types were *plausible*, not *measured* — invented field names that didn't
-match what `api/main.py` actually returns. The fix has been the same each time: curl
-the real endpoint, diff it against the frontend's assumed shape byte-for-byte, correct
-the types and every component that reads them, then confirm zero console errors in a
-real browser. Overview, Worklist, Evaluation, Invoice, and the live trace are now fixed
-and verified this way; Compliance was checked and found already correct. **Everything
-left in Day 7–8 is polish** (responsive/dark-mode check, the docs stack correction, the
-four motion-budget animations already present but not yet audited against the spec) —
-the "no mocks anywhere" gate is holding, checked against a real browser, not just a
-type-checker.
+**The Day-8 gate is met.** The plan's own words for it were *"MVP checkpoint. Not green
+→ no stretch lane, no exceptions."* It is green: the compliance panel and evaluation
+page are live on real rows, the four motion-budget animations are audited against
+`FRONTEND_SPEC.md`, the deliberate failure drill runs as a script and passes both
+phases, and `docs/DEMO_SCRIPT.md` has gone from a 27-line outline to a shot-by-shot
+script whose every id, string and number was read out of the running system. The
+stretch lane is not being taken — §06 said the buffer was gone two days ago and that
+has not changed. What is left is Day 9: docs, a fresh-clone test, the video, and the
+repo flip.
 
-**One thing is waiting on a clock, not on either of us.** `batch_v2` — the re-run that
-demonstrates full audit coverage — has halted twice on the Claude account's session
-limit, most recently at 75/190. It is resuming now, in the background, and it resumes
-with one command whenever it stops again (§04). The Day-6 gate does not depend on it:
-`batch_v1` already completed all 190 unattended. The second halt earned its keep — it
-exposed a resume-query defect that would have stranded an approved invoice permanently
-(§03).
+**Three real defects were found in the last stretch, and one of them mattered.** The
+compliance panel's `at` parameter — the control that lets a reviewer ask *what would
+the guardrail have said while this invoice was live* — existed and had never worked;
+a naive timestamp reached `consent_gate`, which correctly refuses to guess a timezone,
+and the endpoint returned a 500. That is now normalised to UTC and tested. Underneath
+it was the worse one: **the window rule formatted its hour in whatever timezone the
+caller happened to pass and then labelled the result "IST" regardless.** The verdict
+was never wrong — `is_non_peak` always did its own conversion — but the *sentence* is
+copied verbatim into `decisions.authorizing_rule` and rendered on the compliance chip,
+so every API lookup produced a permanent record naming an hour 5h30m off, about the one
+rule that is entirely about the hour. Every guardrail test fixture was IST-aware, which
+is exactly why nothing caught it. Both are in `WHAT_BROKE.md` under 4 Sep.
 
-**Nothing else is blocked on you right now.** Your first required action is on Day 9. The
-full list is in §05, with dates.
+**One thing in the demo script is a deliberate absence, not an oversight.** All 428
+`decisions` rows carry `guardrail_verdict = APPROVE`, so there is no red DENY in the
+streaming trace and none has been staged. That is the architecture working: compliance
+*generates* the legal option set before the model ranks it, so an illegal action is
+never on the menu. The refusal shown on camera is computed live on the compliance page,
+on one of **354** genuinely cap-exhausted invoices, by the same functions the gate
+calls. The script says all of this out loud rather than hoping nobody asks.
+
+**Nothing else is blocked on you right now.** Your first required action is today,
+Day 9. The full list is in §05, with dates.
 
 ---
 
@@ -75,7 +82,7 @@ plan's own gate wording, and it is only ticked when the gate is actually met.
 | **5** | 31 Aug | Policy layer + four-arm paired harness + bootstrap CIs → `EVALUATION.md` | ✅ | [`docs/EVALUATION.md`](docs/EVALUATION.md) §04–§07, [`docs/assets/four_arms.png`](docs/assets/four_arms.png), `eval_runs` / `eval_arm_results` / `eval_arm_violations` / `eval_intervals` in Postgres |
 | **6** | 1 Sep | Agent SDK orchestrator, `can_use_tool` gate, PostToolUse audit, MCP mode switch, both adapters, full batch | ✅ *(finished 2 Sep)* | `agent/` — `orchestrator`, `tools`, `gate`, `hooks`, `mcp_config`, `adapters/`; 112 tests. `batch_v1` **190/190 unattended, exit 0**; `live_v1` / `live_v2` carry real `plink_…` IDs; `decisions` + `audit_log` populated in Postgres |
 | **7** | 2 Sep | FastAPI + Next.js — overview, worklist, drill-down on real data | ✅ *(Vite, not Next.js — see §04)* | `api/main.py` — 10 read-only endpoints over `winback_reader`, 22 tests, no mocked data anywhere. Live trace (`/runs/{id}/events`, cursored on `event_id`) and compliance panel (`/invoices/{id}/compliance`, `/compliance/window`) call `compliance/` rather than restating it. `dashboard/` (Figma-Make Vite export) delivered; Overview, Worklist, Invoice, and the live trace verified against real API shapes and fixed where they weren't (§03) |
-| **8** | 3 Sep | Compliance panel + evaluation page + four animations; failure drill; rough-cut video — **MVP checkpoint** | ◐ Compliance panel + evaluation page verified against real data; animations present, not yet audited; failure drill and video not started | `dashboard/src/pages/Compliance.tsx`, `Evaluation.tsx` fixed and verified |
+| **8** | 3 Sep | Compliance panel + evaluation page + four animations; failure drill; rough-cut video — **MVP checkpoint** | ✅ *(finished 4 Sep)* | `dashboard/src/pages/Compliance.tsx` + `Evaluation.tsx` on live data, with an "as of" control that supplies the clock the rules are functions of; the four animations audited against `FRONTEND_SPEC.md`; `scripts/failure_drill.sh` passing both phases; `docs/DEMO_SCRIPT.md` firm, every string in it read out of the running system |
 | **9** | 4 Sep | Docs, fresh-clone `run_demo.sh`, final video, repo public, tagged release | ⬜ | — |
 | **10** | 5 Sep | Buffer, submit early | ⬜ | — |
 
@@ -93,8 +100,8 @@ Plan sections not tied to a single day, and their state:
 | §4 | Compliance layer, zero LLM | ✅ Done — six modules + composing guardrail, pure functions |
 | §5 | ML pipeline | ✅ Done end to end — features, XGBoost, three-way calibration, and the **decision policy** (`ml/policy.py`: argmax expected ₹ over legal action×slot candidates, under the remaining attempt budget) |
 | §7 | Schema, append-only, PII redaction | ✅ Done — `REVOKE` + triggers, verified against the owner role |
-| §8 | Front end | Days 7–8 |
-| §11 | 5-minute video | Outline committed (`docs/DEMO_SCRIPT.md`); shot list Day 8, recorded Day 9 |
+| §8 | Front end | ✅ Done — five pages on real data, the four-animation motion budget honoured and no more, `prefers-reduced-motion` respected. Stack is Vite + React 19, not the Next.js the plan named; the docs now say so |
+| §11 | 5-minute video | Script firm (`docs/DEMO_SCRIPT.md`) — shot list, the verbatim 2:45 beat, and an explicit list of what is *not* claimed on camera. Recording is Day 9 and is yours (§05) |
 
 ---
 
@@ -327,6 +334,68 @@ at the end. This is deliberately a spec, not code — you scoped Day 7–8 front
 yours to build (or to hand to a fresh session via the master prompt); this file is what
 makes that buildable without re-deriving the API shapes from scratch.
 
+**Day 8 — the MVP checkpoint, and the two defects it turned up.**
+
+The gate work itself was unglamorous and is done: `dashboard/src/data/demo.ts` deleted
+rather than left orphaned (a deleted file cannot be imported back by accident, an
+unused one can); a `/health` badge in the header so a dead backend is visible before
+it is embarrassing; responsive and dark-mode passes; page title and meta corrected off
+the Figma-Make defaults; the four animations checked against the motion budget in
+`FRONTEND_SPEC.md` — ₹ count-up, funnel stagger, trace row flash, drawer slide, and
+nothing else. `scripts/run_demo.sh` brings the whole stack up with one command.
+
+**The failure drill is a script, not a story.** `scripts/failure_drill.sh` runs two
+phases: a clean baseline cohort, then the same cohort with the local MCP container
+killed mid-run. The batch finishes both times with a complete audit trail. Getting
+there exposed that the fallback ladder was believing its own configuration — a stdio
+mount that had never come up still looked healthy — so `mcp_config.py` now demotes
+local → remote → off with the reason carried in the lane description and written to
+the audit row. It also produced the `TOOLSETS` finding now in `LIVE_LANE_FINDINGS.md`
+§04.3: `razorpay/mcp` reads a comma-joined value as a *single* toolset name and
+refuses to start, so the separator is a space, and commas are normalised in code so a
+stale `.env` cannot silently disable local mode. The script says plainly in its own
+output that phase 2 does not always write an `mcp_degraded` row — the SDK does not
+surface a dead stdio mount unless a call is in flight — because a drill that
+overstates what it proved is worse than no drill.
+
+**The compliance panel's `at` parameter existed and had never worked.** Supplying a
+moment is the whole point of that control: the rules are pure functions of facts and a
+clock, so handing them the clock is how a reviewer asks *what would the guardrail have
+said while this invoice was live* without a second implementation to trust — and the
+frozen dataset's newest `charge_at` is 23 Aug, so against the wall clock every consent
+and transactional window has expired. A hand-typed timestamp carries no offset,
+reached `consent_gate`, which correctly refuses to guess a timezone, and returned a
+500. It is now normalised to UTC — the only defensible reading in a system whose every
+stored column is UTC — and surfaced in the panel as an "as of" control with a button
+that jumps straight to the invoice's own charge moment.
+
+**And underneath it, the one that mattered: the window rule wrote the wrong hour into
+the permanent record.** `_check_window` called `strftime` on whatever timezone the
+caller passed and then appended the literal string "IST". The *verdict* was never
+wrong — `is_non_peak` always did its own conversion — but that sentence is copied
+verbatim into `decisions.authorizing_rule` and rendered on the compliance chip, so
+every API lookup since the endpoint was written produced a permanent record naming an
+hour 5h30m off, about the one rule that is entirely about the hour. The batch was
+unaffected: `ml/policy.py` passes IST-aware slots, so all 428 committed rows are
+correct. Every guardrail test fixture was also IST-aware, which is precisely why
+nothing caught it — the bug was invisible by construction. Fixed by converting before
+formatting in both branches and for the suggested slot, and pinned by two tests
+parametrized over UTC, `America/New_York` and IST. Both defects are in
+`WHAT_BROKE.md` under 4 Sep.
+
+**`docs/DEMO_SCRIPT.md` is firm, and one beat in it changed on contact with the data.**
+The plan's marquee moment was a red DENY flashing in the live agent trace. There is no
+such row: all 428 `decisions` carry `guardrail_verdict = APPROVE`. That is not the gate
+failing to fire — compliance *generates* the legal option set before the model ranks
+it, so an illegal action is never on the menu, and `agent/tests/test_gate.py` proves
+the gate underneath still denies. Rather than stage one, the refusal is now shown where
+it is real: the compliance page computes it live on `inv_3890_01`, one of **354**
+invoices that have genuinely used all four attempts, where four of five rules approve
+and the root-cause rule says in words *"TD may be retried"* — and the answer is still
+DENY, because the budget is spent. The script carries that beat verbatim, the five
+rigour numbers already chosen, and a section titled "What is deliberately *not* in this
+video" listing every claim not being made on camera.
+
 ---
 
 ## 04 — What is left, for me
@@ -339,53 +408,48 @@ seed, because the API reads tables and not a generator; and the per-presentment
 `decisions` and `audit_log` rows now exist under `run_id` and `arm`, which is what gives
 the drill-down something to drill into.
 
-**Waiting on a clock: finish `batch_v2`.** Running now in the background; if the session
-limit stops it again, one command picks it up:
+**Day 7 — closed.** Delivered as a Vite/React build rather than Next.js; overview,
+worklist, invoice drill-down and the live trace verified against real API shapes.
+The last mock in the tree — `dashboard/src/data/demo.ts` — is deleted, not merely
+unused, so the "no mocks anywhere" gate is enforced by the compiler and not by
+discipline. A header health badge polls `/health`, because a red badge on camera is
+cheaper than a silent empty page.
 
-```
-python -m agent.orchestrator --run-id batch_v2
-```
+**Day 8 — closed, and the MVP checkpoint is green.** Compliance panel and evaluation
+page live on real rows; the four motion-budget animations audited against
+`FRONTEND_SPEC.md`; responsive and dark-mode checked; the deliberate failure drill
+written as `scripts/failure_drill.sh` and passing both phases; `docs/DEMO_SCRIPT.md`
+finished to a shot list with the exact strings to be shown. The compliance panel's
+`at` control now works, which is what makes a frozen dataset answerable at the moment
+each invoice was live — without editing a row.
 
-It resumes from `audit_log` — 75 concluded, 115 to work — because the trail *is* the
-checkpoint and there is no progress file that could disagree with it. Expect a few
-dollars. Not on the critical path: `batch_v1` already met the Day-6 gate.
+**Reconciled.** `ARCHITECTURE.md` §06 and `FRONTEND_SPEC.md` now describe the shipped
+stack (Vite + React 19 + TypeScript + Tailwind v4 + Framer Motion + `HashRouter`),
+not the originally-specified Next.js App Router.
 
-**Day 7 — the dashboard.** Delivered as a Vite/React build rather than Next.js;
-overview, worklist, invoice drill-down, and the live trace are now verified against
-real API shapes (§03). No mocked data anywhere — every fixed defect was a mismatch
-against the real backend, never a stand-in value.
-
-**Day 8 — the parts that win the video.** Compliance panel and evaluation page are
-verified. Left: audit the four motion-budget animations (₹ count-up, funnel stagger,
-live agent trace red-flash, drill-down drawer) against `FRONTEND_SPEC.md`'s spec;
-responsive/mobile and dark-mode check (not yet tested); the deliberate failure drill
-(kill the local MCP mid-batch, prove it degrades to remote + simulated with a clean
-audit trail); rough-cut video as insurance. **MVP checkpoint — if this day is not
-green, the stretch lane does not happen.**
-
-**Reconcile the stack mismatch in the docs.** `ARCHITECTURE.md` §06 and
-`FRONTEND_SPEC.md` still describe the originally-specified Next.js 15 App Router;
-the delivered stack is Vite + React + TypeScript + Tailwind v4 + Framer Motion +
-react-router-dom (`HashRouter`). Update both to describe what was actually shipped.
-
-**Day 9 — shipping.** All docs final, fresh-clone test of `scripts/run_demo.sh` in a
-clean directory, tagged release, repo flipped public (on your word — see §05).
+**Day 9 — shipping, and this is where the remaining work is.** All docs final;
+fresh-clone test of `scripts/run_demo.sh` in a clean directory; README's "what broke"
+log; tagged release; repo flipped public (on your word — see §05). One documentation
+item carried in from Day 8: `npm install` is the supported package-manager path —
+`pnpm` is not installed on this machine and both lockfiles are committed, so the
+README must say which one is the tested route rather than leaving a reader to guess.
 
 **Day 10 — buffer.** Submit early in the day, not at the wire.
 
-**Carried, not forgotten:** `docs/ARCHITECTURE.md` gets its final diagram once the agent
-loop exists; `docs/DEMO_SCRIPT.md` is an outline until Day 8.
+**Not being done, and deliberately:** the stretch lane (checkout-abandonment). §06
+recorded on Day 5 that the two-day buffer was spent; the plan's cut order puts stretch
+lanes first, and the Day-8 gate is met without them.
 
 ---
 
 ## 05 — What is left, for you
 
-Ordered by date. Nothing here is due before 4 September.
+Ordered by date. **The first two are due today.**
 
 | When | What | Why it has to be you |
 |---|---|---|
 | **Day 9 · 4 Sep** | **Say the word to make the repo public.** `gh` is authenticated as `DisturbedSage5840C`, so the flip itself takes one command — but publishing the repo is irreversible in practice and outward-facing, so it does not happen without you saying so. | Publication decision |
-| **Day 9 · 4 Sep** | **Record the 5-minute video.** Script is in `docs/DEMO_SCRIPT.md`; I will have the shot list and the running dashboard ready. `ffmpeg` is not installed — QuickTime screen capture is the path unless you want it installed on Day 8. | Your voice, your screen |
+| **Day 9 · 4 Sep** | **Record the 5-minute video.** `docs/DEMO_SCRIPT.md` is now firm, not an outline: an eight-row shot list with what to have open in each beat, the 2:45 refusal written out verbatim with the exact invoice id to type, the five numbers to say in the rigour beat, and a section naming what is deliberately *not* claimed on camera. Bring the stack up with `scripts/run_demo.sh` and check the health badge is green before you start. `ffmpeg` is not installed — QuickTime screen capture is the path. | Your voice, your screen |
 | **Day 10 · 5 Sep** | **Submit the application** at razorpay.com/buildathon, with whatever student-eligibility proof the form asks for. Track 03. Early in the day. | It is your application |
 
 One small decision, whenever you get to it:
@@ -398,7 +462,7 @@ One small decision, whenever you get to it:
 Optional, and none of it blocks the build:
 
 - **Install `ffmpeg`** if you want to edit the video programmatically rather than in
-  QuickTime. Decide by Day 8.
+  QuickTime. Decide before you record — after is too late to matter.
 - **MCP connectors.** `figma`, `atlassian` and `supabase` need an OAuth flow this
   session cannot run, and the `github` MCP server fails to connect (badly formatted
   Authorization header). **None of them are needed** — this is a Python/Postgres
@@ -421,7 +485,7 @@ front end on Razorpay's motion language · 8+ hrs/day).
 |---|---|---|
 | Model does not beat retry-everything on raw ₹ | Headline is ₹/legal-attempt; arm B is disqualified on legality, decided before results existed | **Realised, exactly as anticipated.** The money difference is +₹28 with an interval spanning zero. The pre-committed response is the one now in `EVALUATION.md` §07, and a test keeps the tie a tie |
 | Simulator circularity challenged in the panel | Raised first, in the README and on camera, with the observed-vs-censored ECE gap (0.034 vs 0.442) as evidence it was taken seriously | Stronger now than planned — the covariate finding is a better example than the one it replaced |
-| Next.js eats Days 7–8 | Overview, worklist, drill-down and the compliance panel are mandatory; the evaluation page may degrade to committed PNGs | No |
+| Next.js eats Days 7–8 | Overview, worklist, drill-down and the compliance panel are mandatory; the evaluation page may degrade to committed PNGs | **Closed, and the fallback was never needed.** Both days landed inside their gates and the evaluation page renders live from the API rather than from PNGs. The risk was mis-named: it was never the framework — the delivered stack is Vite, not Next.js — it was that the frontend's types were guessed rather than measured, which is what actually cost the time |
 | `HookMatcher` shape differs from published docs | Day 6: read the installed types. `can_use_tool` is the load-bearing gate; audit hooks can fall back to wrapping the adapter | **Closed.** Read `claude_agent_sdk.types` directly and the loose part of the docs was real: `matcher=None` matches every tool, `tool_response` arrives as a bare list, and exceptions raised inside a `PostToolUse` hook are swallowed. All three are in `WHAT_BROKE.md`. No fallback needed |
 | A batch halts part-way through | `audit_log` is the checkpoint; re-running the same `--run-id` resumes rather than restarting, which is a correctness property before a convenience one — NPCI counts presentments, not batches | **Realised twice and it worked both times.** Once when the process was killed, twice on the account's session limit. `batch_v2` resumed from 24, from 50 and from 75, with the halt reason and the resume command in the report line each time. The third halt paid for itself: it exposed a resume-query defect that would have stranded an approved invoice |
 | Time overrun | Cut order: stretch lanes → dashboard polish → animations → live cohort. Never compliance tests, audit trail, or `EVALUATION.md` | **Worse than yesterday.** The two-day buffer was spent on Day 5 and the schedule now has no slack. The cut order stands and the stretch lane is, in practice, gone |
@@ -434,6 +498,7 @@ Newest first. One entry per working prompt.
 
 | # | Date | What changed |
 |---|---|---|
+| 8 | 4 Sep 2026 | **Day 7 and Day 8 both closed; the MVP checkpoint is green.** *Gate work:* the last mock (`dashboard/src/data/demo.ts`) deleted rather than orphaned, so "no mocks anywhere" is compiler-enforced; a `/health` badge in the header; responsive and dark-mode passes; the four animations audited against `FRONTEND_SPEC.md`; page title and meta corrected; `ARCHITECTURE.md` §06 and `FRONTEND_SPEC.md` reconciled to the shipped Vite stack. *Resilience:* `scripts/run_demo.sh` (one-command bring-up) and `scripts/failure_drill.sh` (two-phase: a clean baseline, then the local MCP killed mid-run) both written and passing; the MCP fallback ladder now demotes local → remote → off with the reason recorded, after a mount/reachability defect that made a dead stdio server look healthy; `LIVE_LANE_FINDINGS.md` §04.3 records why `TOOLSETS` must be space-separated (`razorpay/mcp` reads a comma-joined value as one toolset name and refuses to start). *Two defects, one of them serious:* `GET /invoices/{id}/compliance?at=` returned a 500 on every call — a naive timestamp reached `consent_gate`, which refuses to guess a timezone — now normalised to UTC and exposed in the panel as an "as of" control, which is what makes the frozen dataset answerable at the moment each invoice was live; and **the window rule `strftime`'d in the caller's timezone and labelled it "IST" unconditionally**, so every API lookup wrote a permanent `authorizing_rule` naming an hour 5h30m off, about the one rule that is entirely about the hour. The verdict was always correct and every test fixture was IST-aware, which is why nothing caught it — now converted before formatting, with two tests parametrized over three zones. *Demo:* `docs/DEMO_SCRIPT.md` rewritten from a 27-line outline to a firm shot list, with the 2:45 refusal written out verbatim (`inv_3890_01`, four APPROVEs against one DENY) and a section stating what is deliberately **not** claimed on camera — there is no red DENY in the batch trace, because all 428 `decisions` rows are APPROVE by design, and none was staged. Two `WHAT_BROKE.md` entries. 612 tests pass, `ruff` clean, `tsc --noEmit` and `vite build` clean. |
 | 7 | 3 Sep 2026 | **Frontend delivered (`frontend.zip`, Vite not Next.js) and hardened page by page against the live API.** Five real defects found and fixed the same way each time — curl the real endpoint, diff against the frontend's assumed TypeScript types, correct types + components + demo fixtures, verify with `tsc`/`vite build`/a real Playwright browser: Worklist's `{items,total}` vs the real `{total,rows}`; Evaluation's bare-string `run` and stale `unit`/`verdict_label` fields; Invoice's fully-nested `{invoice,attempts,decisions,audit_trail}` shape with renamed fields throughout (largest single fix); `RootCauseChip` crashing on a genuinely-`null` (not-yet-classified) `root_cause_class`; the live trace's `since=''` 422-looping on every first poll (fixed by omitting the param when null, `URLSearchParams`-built like the existing `outcome` param) plus its own separately-invented `TraceEvent` field names. Compliance page checked and found already correct. CORS opened for the Vite dev port (8443). `api/main.py` CORS change plus the full `dashboard/` tree committed. |
 | 5 | 3 Sep 2026 | **Day 7, non-frontend half complete.** Three endpoints added: `GET /runs/{id}/events` (live trace, cursored on the `BIGSERIAL` `event_id`, each event joined to its `authorizing_rule`), `GET /invoices/{id}/compliance` (every rule's verdict plus the composed guardrail for a retry *and* a nudge, by calling `compliance/` rather than restating it), `GET /compliance/window` (peak/non-peak, countdown, next legal slots). Six new tests. Two defects fixed: `_already_worked` unioned `decisions` with `audit_log`, which — after `record_conclusion`/`record_silence` guaranteed a row per conclusion — inverted its own meaning and would have permanently stranded an invoice killed between its guardrail approval and its tool call (a session limit produced exactly one); and the panel called the window endpoint as a plain function, receiving FastAPI's `Query` default object instead of an `int`. Two `WHAT_BROKE.md` entries, `ARCHITECTURE.md` §05 rewritten. `batch_v2` halted a second time on the account session limit at 75/190 and is resuming. 609 tests pass, `ruff` clean. |
 | 4 | 2 Sep 2026 | **Read-only backend + two defects it exposed.** `api/main.py` — 7 `GET` endpoints over `winback_reader`; `api/tests/test_main.py`, 16 tests, no mocked database. Fixed: the headline ₹ figure serialised as a JSON **string** (`Decimal` from `sum()`), and `exception_worklist` filtering `status = 'at_risk'` so a run's worklist emptied itself the moment the run succeeded — the view now exposes `invoice_status` and the caller filters, with a new `GET /worklist` as the live queue. Two `WHAT_BROKE.md` entries; `ARCHITECTURE.md` §05 added. `batch_v2` halted at 50/190 on the account session limit (resets 7pm IST) — resumable, not a defect. 603 tests pass, `ruff` clean. |

@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
-import { getComplianceWindow, getInvoiceCompliance, HttpError } from '../lib/api'
+import { getComplianceWindow, getInvoiceCompliance, getLiveWorklist, HttpError } from '../lib/api'
 import { useAsync } from '../lib/hooks'
 import { EmptyState, ErrorState, Panel, SectionHeader, Spinner } from '../components/ui'
 import { WindowStrip } from '../components/WindowStrip'
 import { CompliancePanel } from '../components/CompliancePanel'
-import { STAR_INVOICE } from '../data/demo'
 import type { CompliancePanelData } from '../lib/types'
 
 // Static rule reference — hand-written copy sourced from docs/COMPLIANCE.md,
@@ -18,7 +17,17 @@ const RULES = [
 
 export function CompliancePage() {
   const window = useAsync(getComplianceWindow, [])
+  // The example id in the placeholder is a real invoice off the live queue, not
+  // a made-up one — typing the hint should actually resolve.
+  const sample = useAsync(() => getLiveWorklist(1, 0), [])
+  const sampleId = sample.data?.items[0]?.invoice_id
   const [query, setQuery] = useState('')
+  // The moment the rules are asked about. Empty means now, which is the honest default
+  // for a live panel — but the dataset is frozen, so every time-based window in it has
+  // long since expired against the wall clock. Being able to name the moment is what
+  // separates "this invoice was never contactable" from "this invoice stopped being
+  // contactable in July", and only one of those is a fact about the policy.
+  const [asOf, setAsOf] = useState('')
   const [lookup, setLookup] = useState<CompliancePanelData | null>(null)
   const [lookupErr, setLookupErr] = useState<unknown>(null)
   const [busy, setBusy] = useState(false)
@@ -30,14 +39,12 @@ export function CompliancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    const id = query.trim()
+  async function evaluate(id: string, at: string) {
     if (!id) return
     setBusy(true)
     setLookupErr(null)
     try {
-      setLookup(await getInvoiceCompliance(id))
+      setLookup(await getInvoiceCompliance(id, at || undefined))
     } catch (err) {
       setLookup(null)
       setLookupErr(err)
@@ -45,6 +52,17 @@ export function CompliancePage() {
       setBusy(false)
     }
   }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    void evaluate(query.trim(), asOf)
+  }
+
+  // `datetime-local` wants `YYYY-MM-DDTHH:MM`; the API hands back a UTC ISO string with
+  // an offset. Slicing is the conversion, because both are already UTC — parsing this
+  // through `Date` would silently re-render it in the viewer's timezone and the panel
+  // would then be judging a different instant than the one on the label.
+  const chargeMoment = lookup?.pre_debit_notice.charge_at?.slice(0, 16) ?? null
 
   return (
     <div className="space-y-10">
@@ -58,13 +76,25 @@ export function CompliancePage() {
 
       {/* 02 — Invoice lookup */}
       <div>
-        <SectionHeader index="02" title="Per-invoice guardrail lookup" />
-        <form onSubmit={submit} className="flex gap-2">
+        <SectionHeader
+          index="02"
+          title="Per-invoice guardrail lookup"
+          caption="The rules are pure functions of the invoice’s facts and a moment. Leave the moment blank to ask about now, or name one to ask what the guardrail said while the invoice was live."
+        />
+        <form onSubmit={submit} className="flex flex-wrap gap-2">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={`invoice id, e.g. ${STAR_INVOICE}`}
-            className="flex-1 rounded-lg border border-slate-300 bg-surface px-3 py-2 font-mono text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand-wash"
+            placeholder={sampleId ? `invoice id, e.g. ${sampleId}` : 'invoice id'}
+            className="min-w-[14rem] flex-1 rounded-lg border border-slate-300 bg-surface px-3 py-2 font-mono text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand-wash"
+          />
+          <input
+            type="datetime-local"
+            value={asOf}
+            onChange={(e) => setAsOf(e.target.value)}
+            aria-label="Evaluate as of (UTC) — blank means now"
+            title="Evaluate as of (UTC). Blank means now."
+            className="rounded-lg border border-slate-300 bg-surface px-3 py-2 font-mono text-sm text-ink outline-none focus:border-brand focus:ring-2 focus:ring-brand-wash"
           />
           <button
             type="submit"
@@ -81,7 +111,43 @@ export function CompliancePage() {
             ) : (
               <ErrorState error={lookupErr} />
             ))}
-          {lookup && <CompliancePanel data={lookup} />}
+          {lookup && (
+            <>
+              <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                <span>
+                  evaluated as of{' '}
+                  <span className="font-mono text-ink">{lookup.evaluated_at.slice(0, 19)}Z</span>
+                </span>
+                {chargeMoment && chargeMoment !== asOf && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setAsOf(chargeMoment)
+                      void evaluate(lookup.invoice_id, chargeMoment)
+                    }}
+                    className="font-medium text-brand hover:text-brand-dim disabled:opacity-50"
+                  >
+                    ask at the charge moment ({chargeMoment.replace('T', ' ')}Z)
+                  </button>
+                )}
+                {asOf && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setAsOf('')
+                      void evaluate(lookup.invoice_id, '')
+                    }}
+                    className="font-medium text-brand hover:text-brand-dim disabled:opacity-50"
+                  >
+                    back to now
+                  </button>
+                )}
+              </div>
+              <CompliancePanel data={lookup} />
+            </>
+          )}
         </div>
       </div>
 

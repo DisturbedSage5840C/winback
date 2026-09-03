@@ -1,15 +1,17 @@
 // Data client — FRONTEND_SPEC §01/§07/§08.
-// When VITE_API_BASE is set, every call hits the real FastAPI backend (no
-// client library, plain fetch, all GET, no auth). When it is unset (e.g. the
-// Figma Make preview with no backend), it falls back to the labeled demo
-// dataset in ../data/demo.ts so the scenes still render. No number is ever
-// invented — demo rows mirror the exact API shapes.
-import * as demo from '../data/demo'
+//
+// Every number on screen comes from a real FastAPI response. There is no demo
+// dataset and no fallback: if the backend is unreachable the UI says so and
+// renders nothing, because a dashboard that invents a plausible ₹ figure when
+// its API is down is worse than one that admits the API is down. Plain fetch,
+// all GET, no auth, no client library.
 import type {
   CompliancePanelData,
+  ComplianceWindow,
   Config,
   Evaluation,
   EventsResponse,
+  Health,
   InvoiceDetail,
   Overview,
   Paged,
@@ -17,25 +19,32 @@ import type {
   WorklistRow,
 } from './types'
 
-export const API_BASE: string | undefined = (import.meta as any).env?.VITE_API_BASE
-export const LIVE = Boolean(API_BASE)
-
-async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`)
-  if (!res.ok) throw new HttpError(res.status, `${res.status} on ${path}`)
-  return (await res.json()) as T
-}
+// Defaults to the port `scripts/run_demo.sh` serves the API on, so a fresh
+// clone works with no configuration; override with VITE_API_BASE.
+export const API_BASE: string =
+  (import.meta as any).env?.VITE_API_BASE ?? 'http://localhost:8000'
 
 export class HttpError extends Error {
-  constructor(public status: number, msg: string) {
+  constructor(
+    public status: number,
+    msg: string,
+  ) {
     super(msg)
   }
 }
 
-const delay = (ms = 140) => new Promise((r) => setTimeout(r, ms))
-
-function page<T>(rows: T[], limit: number, offset: number): Paged<T> {
-  return { items: rows.slice(offset, offset + limit), total: rows.length, limit, offset }
+async function get<T>(path: string): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}${path}`)
+  } catch {
+    // fetch rejects with an opaque "Failed to fetch" on a refused connection —
+    // name the actual cause, since "is the backend running" is the answer 9
+    // times out of 10.
+    throw new Error(`Can’t reach the API at ${API_BASE} — is the backend running?`)
+  }
+  if (!res.ok) throw new HttpError(res.status, `${res.status} on ${path}`)
+  return (await res.json()) as T
 }
 
 // `/worklist` and `/runs/{id}/worklist` answer `{ total, rows }` — the run_id-scoped
@@ -48,99 +57,63 @@ async function getPage<T>(path: string, limit: number, offset: number): Promise<
 
 // ── Endpoints ─────────────────────────────────────────────────────────────
 
-export async function getHealth(): Promise<{ ok: boolean }> {
-  if (LIVE) return get('/health')
-  await delay(60)
-  return { ok: true }
+export function getHealth(): Promise<Health> {
+  return get('/health')
 }
 
-export async function getConfig(): Promise<Config> {
-  if (LIVE) return get('/config')
-  await delay()
-  return demo.config
+export function getConfig(): Promise<Config> {
+  return get('/config')
 }
 
-export async function getRuns(): Promise<RunSummary[]> {
-  if (LIVE) return get('/runs')
-  await delay()
-  return demo.runs
+export function getRuns(): Promise<RunSummary[]> {
+  return get('/runs')
 }
 
-export async function getOverview(runId: string): Promise<Overview> {
-  if (LIVE) return get(`/runs/${runId}/overview`)
-  await delay()
-  const o = demo.overviews[runId]
-  if (!o) throw new HttpError(404, 'no such run')
-  return o
+export function getOverview(runId: string): Promise<Overview> {
+  return get(`/runs/${runId}/overview`)
 }
 
-export async function getLiveWorklist(limit: number, offset: number): Promise<Paged<WorklistRow>> {
-  if (LIVE) return getPage(`/worklist?limit=${limit}&offset=${offset}`, limit, offset)
-  await delay()
-  return page(demo.liveQueue, limit, offset)
+export function getLiveWorklist(limit: number, offset: number): Promise<Paged<WorklistRow>> {
+  return getPage(`/worklist?limit=${limit}&offset=${offset}`, limit, offset)
 }
 
-export async function getRunWorklist(
+export function getRunWorklist(
   runId: string,
   limit: number,
   offset: number,
   outcome?: string,
 ): Promise<Paged<WorklistRow>> {
-  if (LIVE) {
-    const q = new URLSearchParams({ limit: String(limit), offset: String(offset) })
-    if (outcome) q.set('outcome', outcome)
-    return getPage(`/runs/${runId}/worklist?${q.toString()}`, limit, offset)
-  }
-  await delay()
-  let rows = demo.runWorklists[runId] ?? []
-  if (outcome) rows = rows.filter((r) => r.outcome === outcome)
-  return page(rows, limit, offset)
+  const q = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (outcome) q.set('outcome', outcome)
+  return getPage(`/runs/${runId}/worklist?${q.toString()}`, limit, offset)
 }
 
-export async function getInvoice(id: string, runId?: string): Promise<InvoiceDetail> {
-  if (LIVE) return get(`/invoices/${id}${runId ? `?run_id=${runId}` : ''}`)
-  await delay()
-  const inv = demo.invoices[id]
-  if (!inv) throw new HttpError(404, 'no such invoice')
-  return inv
+export function getInvoice(id: string, runId?: string): Promise<InvoiceDetail> {
+  return get(`/invoices/${id}${runId ? `?run_id=${runId}` : ''}`)
 }
 
-export async function getInvoiceCompliance(id: string): Promise<CompliancePanelData> {
-  if (LIVE) return get(`/invoices/${id}/compliance`)
-  await delay()
-  const c = demo.complianceByInvoice[id]
-  if (!c) throw new HttpError(404, 'no such invoice')
-  return c
+// `at` is a UTC instant without an offset suffix, which the API reads as UTC. A `+` in a
+// query string decodes to a space, so shipping a full ISO offset here would need
+// escaping to survive the round trip — and the server already has exactly one answer for
+// a bare timestamp.
+export function getInvoiceCompliance(id: string, at?: string): Promise<CompliancePanelData> {
+  const q = at ? `?at=${encodeURIComponent(at)}` : ''
+  return get(`/invoices/${id}/compliance${q}`)
 }
 
-export async function getComplianceWindow(): Promise<import('./types').ComplianceWindow> {
-  if (LIVE) return get('/compliance/window')
-  await delay()
-  return demo.complianceWindow()
+export function getComplianceWindow(): Promise<ComplianceWindow> {
+  return get('/compliance/window')
 }
 
-export async function getEvaluation(runId?: string): Promise<Evaluation> {
-  if (LIVE) return get(`/evaluation${runId ? `?run_id=${runId}` : ''}`)
-  await delay()
-  return demo.evaluation
+export function getEvaluation(runId?: string): Promise<Evaluation> {
+  return get(`/evaluation${runId ? `?run_id=${runId}` : ''}`)
 }
 
-// Cursored event stream (§07). In demo mode, reveal events incrementally so
-// the trace visibly streams and lands on the red-flash block.
-export async function getEvents(runId: string, since: number | null, limit = 50): Promise<EventsResponse> {
-  if (LIVE) {
-    // `since` is `int | None` server-side: FastAPI accepts an omitted param as
-    // None but 422s on the literal empty string, so it must be left out of the
-    // querystring entirely on the first poll rather than sent as `since=`.
-    const q = new URLSearchParams({ limit: String(limit) })
-    if (since != null) q.set('since', String(since))
-    return get(`/runs/${runId}/events?${q.toString()}`)
-  }
-  await delay(120)
-  const all = demo.traceEvents[runId] ?? []
-  const cursor = since ?? 0
-  // reveal at most 2 new events per poll so the stream is watchable
-  const next = all.filter((e) => e.event_id > cursor).slice(0, 2)
-  const newCursor = next.length ? next[next.length - 1].event_id : cursor
-  return { cursor: next.length ? newCursor : cursor, events: next }
+// Cursored event stream (§07). `since` is `int | None` server-side: FastAPI
+// accepts an omitted param as None but 422s on the literal empty string, so it
+// must be left out of the querystring entirely on the first poll.
+export function getEvents(runId: string, since: number | null, limit = 50): Promise<EventsResponse> {
+  const q = new URLSearchParams({ limit: String(limit) })
+  if (since != null) q.set('since', String(since))
+  return get(`/runs/${runId}/events?${q.toString()}`)
 }

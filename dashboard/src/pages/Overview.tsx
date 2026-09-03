@@ -131,7 +131,9 @@ function StopReasons({ rows }: { rows: { stop_reason: string; invoices: number }
     <div className="space-y-2">
       {rows.map((r) => (
         <div key={r.stop_reason} className="flex items-center gap-3">
-          <div className="w-64 shrink-0 truncate font-mono text-xs text-ink" title={r.stop_reason}>
+          {/* fixed-width on desktop for a clean bar baseline, but it has to be
+              allowed to shrink on a phone or it widens the whole panel */}
+          <div className="w-28 shrink truncate font-mono text-xs text-ink sm:w-64 sm:shrink-0" title={r.stop_reason}>
             {r.stop_reason}
           </div>
           <div className="h-4 flex-1 overflow-hidden rounded bg-slate-100">

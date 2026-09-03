@@ -327,6 +327,45 @@ def test_every_write_marks_its_invoice_as_covered(bench, monkeypatch):
     assert writer.covered == {invoice_id}
 
 
+def test_a_degradation_is_deferred_and_not_escalated(bench, monkeypatch):
+    """The Day-8 drill's audit row, and the one outcome value it must not use.
+
+    ``recovery_funnel`` counts ``escalated`` straight into the number the dashboard's
+    compliance strip renders as *Escalated*, so a Docker container dying would have
+    appeared on screen as the guardrail routing a payment to a human — an infrastructure
+    event wearing a compliance event's clothes, on the one panel whose whole job is to be
+    trusted. ``deferred`` reaches the funnel through ``stopped`` instead, via the
+    ``stop_reason``, which is where an operator should find it."""
+    seen: list[tuple[dict, dict]] = []
+    monkeypatch.setattr(
+        AuditWriter, "record_action", lambda self, payload, **kw: seen.append((payload, kw))
+    )
+    writer = AuditWriter(bench=bench, run_id="agent_test_noop")
+    invoice_id = sorted(bench.cases)[0]
+
+    writer.record_degradation(invoice_id, "local failed — ProcessError", "remote")
+
+    payload, kwargs = seen[0]
+    assert payload["invoice_id"] == invoice_id
+    assert kwargs["trigger"] == "mcp_degraded"
+    assert kwargs["outcome"] == "deferred"
+    assert kwargs["stop_reason"] == "mcp_degraded_to_remote"
+
+
+def test_a_degradation_does_not_cover_the_invoice_it_names(bench, monkeypatch):
+    """``covers=False``. The row is *about* the invoice without concluding it, and the
+    whole point of the demotion is that the invoice is retried on the new lane. Marking
+    it covered would suppress ``record_silence`` on that retry — reopening the exact hole
+    ``record_silence`` exists to close, with the machinery meant to survive a failure."""
+    monkeypatch.setattr("agent.hooks.agent_connection", _no_database)
+    writer = AuditWriter(bench=bench, run_id="agent_test_noop")
+    invoice_id = sorted(bench.cases)[0]
+
+    writer.record_degradation(invoice_id, "local failed — ProcessError", "remote")
+
+    assert writer.covered == set()
+
+
 def test_an_unknown_invoice_is_not_invented(bench):
     """``record_silence`` is called from the loop, not from a hook, so it takes a bare id.
     One that is not in the cohort has no amount and no customer to redact, and writing a

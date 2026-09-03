@@ -1,5 +1,6 @@
 import { NavLink, Route, HashRouter as Router, Routes } from 'react-router-dom'
-import { LIVE, API_BASE } from './lib/api'
+import { API_BASE, getHealth } from './lib/api'
+import { useAsync } from './lib/hooks'
 import { OverviewPage } from './pages/Overview'
 import { WorklistPage } from './pages/Worklist'
 import { InvoicePage } from './pages/Invoice'
@@ -14,17 +15,26 @@ const NAV = [
 ]
 
 function Shell({ children }: { children: React.ReactNode }) {
+  // The badge reports whether the API actually answers, not whether a build-time
+  // env var was set — there is no offline dataset to fall back to, so "is the
+  // backend up" is the only state worth surfacing.
+  const health = useAsync(getHealth, [])
+  const up = health.data?.status === 'ok'
+  const db = health.data?.database
   return (
     <div className="min-h-full">
       <header className="sticky top-0 z-30 border-b border-slate-300 bg-surface/85 backdrop-blur">
-        <div className="mx-auto flex max-w-[1180px] items-center gap-6 px-6 py-3">
+        {/* Wraps below ~1000px: the four nav labels plus the status badge cannot
+            share one row on a phone without pushing the page into a horizontal
+            scroll, and a dashboard that scrolls sideways reads as broken. */}
+        <div className="mx-auto flex max-w-[1180px] flex-wrap items-center gap-x-6 gap-y-2 px-6 py-3">
           <NavLink to="/" className="flex items-baseline gap-2">
             <span className="text-lg font-black tracking-tight text-ink-deep">winback</span>
             <span className="hidden text-xs text-slate-600 sm:inline">
               recover the money you’re legally allowed to
             </span>
           </NavLink>
-          <nav className="ml-auto flex items-center gap-1">
+          <nav className="order-last -mx-6 flex w-[calc(100%+3rem)] items-center gap-1 overflow-x-auto px-6 sm:order-none sm:mx-0 sm:ml-auto sm:w-auto sm:overflow-visible sm:px-0">
             {NAV.map((n) => (
               <NavLink
                 key={n.to}
@@ -41,11 +51,20 @@ function Shell({ children }: { children: React.ReactNode }) {
             ))}
           </nav>
           <span
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-2.5 py-1 text-xs text-slate-600"
-            title={LIVE ? `live API · ${API_BASE}` : 'no VITE_API_BASE set — rendering the bundled demo dataset'}
+            className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-300 px-2.5 py-1 text-xs text-slate-600 sm:ml-0"
+            title={
+              health.loading
+                ? `checking ${API_BASE}`
+                : up
+                  ? `live API · ${API_BASE} · connected as ${db?.role} · ${db?.append_only_triggers} append-only triggers on ${db?.tables} tables`
+                  : `no answer from ${API_BASE} — start the backend (scripts/run_demo.sh)`
+            }
           >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: LIVE ? 'var(--good)' : 'var(--warn)' }} />
-            {LIVE ? 'live API' : 'demo data'}
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: health.loading ? 'var(--slate-600)' : up ? 'var(--good)' : 'var(--critical)' }}
+            />
+            {health.loading ? 'connecting' : up ? 'live API' : 'API unreachable'}
           </span>
         </div>
       </header>

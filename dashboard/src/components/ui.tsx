@@ -159,8 +159,9 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
       <p className="text-sm font-medium text-ink-deep">Couldn’t load this from the API.</p>
       <p className="mt-1 font-mono text-xs text-critical">{msg}</p>
       <p className="mt-2 text-xs text-slate-600">
-        No number is invented client-side. Point <code className="font-mono">VITE_API_BASE</code> at the
-        FastAPI backend, or run against the bundled demo dataset.
+        No number is invented client-side, so nothing renders here rather than something
+        plausible. Start the backend with <code className="font-mono">scripts/run_demo.sh</code>, or
+        point <code className="font-mono">VITE_API_BASE</code> at it.
       </p>
       {onRetry && (
         <button

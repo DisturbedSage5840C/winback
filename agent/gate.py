@@ -58,11 +58,22 @@ def _kind_for(tool_name: str) -> str:
     return "retry" if tool_name == MONEY_TOOL else "nudge"
 
 
-def make_money_gate(bench: Workbench, writer: Any | None = None):
+def make_money_gate(
+    bench: Workbench,
+    writer: Any | None = None,
+    permitted: tuple[str, ...] = ALLOWED_TOOLS,
+):
     """Build the ``can_use_tool`` callback for one batch.
 
     Closed over the workbench rather than reading a global, so two batches running in the
     same process cannot see each other's approvals.
+
+    ``permitted`` is the allow-list this batch enforces — :data:`ALLOWED_TOOLS` plus the
+    Razorpay reads on the live lane, per :func:`agent.tools.permitted_tools`. It is a
+    parameter rather than a lookup so the gate cannot disagree with the orchestrator
+    about which lane is running: the caller computes the set once and both the SDK
+    options and this callback are built from that same value. Widening it never widens
+    what is *gated* — :data:`GATED_TOOLS` is checked separately, below.
 
     ``writer`` is an :class:`agent.hooks.AuditWriter`. It is passed here — rather than
     left to the ``PostToolUse`` hook — because that hook does not fire for a call this
@@ -84,12 +95,12 @@ def make_money_gate(bench: Workbench, writer: Any | None = None):
         # that could deliver a message. An allow-list rather than a block-list: a new
         # tool appearing on the Razorpay MCP server is denied by default, which is the
         # only safe direction for that to fail.
-        if tool_name not in ALLOWED_TOOLS:
+        if tool_name not in permitted:
             return _deny(
                 tool_name,
                 input_data,
                 f"{DENIED_TOOL}: {tool_name} is not permitted in this batch. "
-                f"Permitted tools are {', '.join(ALLOWED_TOOLS)}.",
+                f"Permitted tools are {', '.join(permitted)}.",
             )
 
         if tool_name not in _GATED:

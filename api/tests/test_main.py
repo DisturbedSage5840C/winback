@@ -8,6 +8,7 @@ standing in for Postgres would satisfy neither.
 
 from __future__ import annotations
 
+from datetime import UTC
 from decimal import Decimal
 
 import pytest
@@ -262,6 +263,36 @@ def test_the_panel_refuses_to_guess_a_root_cause(client: TestClient):
 
 def test_an_unknown_invoice_has_no_compliance_panel(client: TestClient):
     assert client.get("/invoices/inv_9999_99/compliance").status_code == 404
+
+
+def test_the_panel_answers_as_of_a_supplied_moment(client: TestClient):
+    """The rules are pure functions of facts and a clock, so supplying the clock is how a
+    reviewer asks what the guardrail said while the invoice was live — a frozen dataset
+    ages out of every time-based window otherwise, and a panel that could only answer
+    "now" would show the same expired verdict for every row in it.
+
+    A bare timestamp is read as UTC. This is the case that used to 500: it reached
+    ``consent_gate``, which refuses to guess a timezone, and the parameter had been
+    unusable since the endpoint was written. Every stored column here is UTC, so UTC is
+    the only reading that can be wrong in a way anyone would notice."""
+    from core.db import read_connection
+
+    with read_connection() as conn:
+        row = conn.execute(
+            "SELECT invoice_id, charge_at FROM exception_worklist"
+            " WHERE charge_at IS NOT NULL ORDER BY charge_at DESC LIMIT 1"
+        ).fetchone()
+    if row is None:
+        pytest.skip("no dated invoice in this database")
+
+    moment = row["charge_at"].astimezone(UTC).replace(tzinfo=None).isoformat()
+    body = client.get(f"/invoices/{row['invoice_id']}/compliance", params={"at": moment})
+    assert body.status_code == 200, body.text
+    assert body.json()["evaluated_at"].startswith(moment[:16])
+
+    # The window strip is arithmetic on that same moment, not on the server's clock —
+    # otherwise the panel would narrate one instant while judging another.
+    assert body.json()["window"]["now_utc"].startswith(moment[:16])
 
 
 def test_the_evaluation_comes_from_the_tables_that_generate_the_report(client: TestClient):

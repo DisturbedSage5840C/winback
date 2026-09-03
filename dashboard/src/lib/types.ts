@@ -50,6 +50,18 @@ export interface Config {
   model_version: string
 }
 
+// `/health` reports the role it connected as and how many append-only triggers
+// are installed — the DB-level proof that `audit_log` cannot be rewritten.
+export interface Health {
+  status: string
+  database: {
+    database: string
+    role: string
+    tables: number
+    append_only_triggers: number
+  }
+}
+
 export interface WorklistRow {
   invoice_id: string
   amount_paise: number

@@ -75,8 +75,9 @@ it today would believe it works.
 
 ## 05 — Status
 
-Complete through **Day 8 of 10** (26 Aug → 5 Sep 2026). **612 tests passing, 99%
-coverage on `compliance/`.**
+Complete through **Day 9 of 10** (26 Aug → 5 Sep 2026), tagged
+[**v1.0.0**](https://github.com/DisturbedSage5840C/winback/releases/tag/v1.0.0).
+**612 tests passing, 99% coverage on `compliance/`.**
 
 | | |
 |---|---|
@@ -89,6 +90,7 @@ coverage on `compliance/`.**
 | ✅ | Four-arm paired counterfactual evaluation — 10,000-resample cluster bootstrap, design frozen before results existed |
 | ✅ | Agent orchestrator on the Claude Agent SDK — `can_use_tool` money gate, append-only audit hooks, Razorpay MCP mode switch, both execution adapters. Batch **190/190 unattended**; the live cohort carries real `plink_…` IDs |
 | ✅ | Dashboard — overview, worklist, drill-down, compliance panel, evaluation. No mocked data anywhere |
+| ✅ | Verified from a cold GitHub clone — bootstrap, fingerprint, `eval.report --check`, dashboard build, API. It found a real defect; see §07 |
 
 ## 06 — Running it
 

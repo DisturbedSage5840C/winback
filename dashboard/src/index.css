@@ -1,0 +1,104 @@
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import 'tailwindcss';
+
+/* ── Winback palette (FRONTEND_SPEC §02) ───────────────────────────── */
+:root {
+  --ink: #192839;
+  --ink-deep: #080d29;
+  --brand: #305eff;
+  --brand-dim: #2950da;
+  --brand-soft: #4d7fff;
+  --brand-tint: #75a3ff;
+  --brand-wash: #e9f0ff;
+
+  --slate-900: #40566d;
+  --slate-600: #6c849d;
+  --slate-300: #cbd5e2;
+  --slate-100: #f8fafc;
+
+  --good: #48d08c;
+  --critical: #f0263c;
+  --warn: #f5a623;
+  --neutral: #6c849d;
+
+  --surface: #ffffff;
+  --surface-dim: #f8fafc;
+  --surface-ink: #0e0b08;
+
+  /* identity chips for root-cause (NOT the status palette) */
+  --id-td: #7c6cff;
+  --id-bdt: #3aa0b8;
+  --id-bdh: #b8763a;
+}
+
+@theme inline {
+  --font-sans: 'Satoshi', 'Manrope', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --color-ink: var(--ink);
+  --color-ink-deep: var(--ink-deep);
+  --color-brand: var(--brand);
+  --color-brand-dim: var(--brand-dim);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-tint: var(--brand-tint);
+  --color-brand-wash: var(--brand-wash);
+
+  --color-slate-900: var(--slate-900);
+  --color-slate-600: var(--slate-600);
+  --color-slate-300: var(--slate-300);
+  --color-slate-100: var(--slate-100);
+
+  --color-good: var(--good);
+  --color-critical: var(--critical);
+  --color-warn: var(--warn);
+  --color-neutral: var(--neutral);
+
+  --color-surface: var(--surface);
+  --color-surface-dim: var(--surface-dim);
+  --color-surface-ink: var(--surface-ink);
+
+  --color-id-td: var(--id-td);
+  --color-id-bdt: var(--id-bdt);
+  --color-id-bdh: var(--id-bdh);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: 'Satoshi', 'Manrope', system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--surface-dim);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+::selection {
+  background: var(--brand-wash);
+  color: var(--ink-deep);
+}
+
+/* hide scrollbars until scrolling (craft rule 11) */
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

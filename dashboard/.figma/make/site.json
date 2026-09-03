@@ -1,0 +1,10 @@
+{
+  "description": "This web application streamlines user engagement by facilitating targeted marketing campaigns and customer retention strategies, enhancing overall business performance.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

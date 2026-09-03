@@ -55,7 +55,12 @@ app = FastAPI(
 # origin list costs nothing and is scoped to local development anyway.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8443",
+        "http://127.0.0.1:8443",
+    ],
     allow_methods=["GET"],
     allow_headers=["*"],
 )

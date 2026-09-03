@@ -4,9 +4,11 @@
 > here disagrees with the repo, the repo is right and this file is stale — say so and
 > it gets fixed in the same turn.
 
-**As of:** 4 September 2026 · **Plan day:** 9 of 10 — **the Day-9 gate is met: the
-one-command demo now works on a fresh clone, and it did not before today** ·
-**Head:** `ebb207a` + this prompt's commit, pushed to `DisturbedSage5840C/winback` (private) ·
+**As of:** 4 September 2026 · **Plan day:** 9 of 10 — **Day 9 is closed except for the
+video: the one-command demo works on a fresh clone, the repo is public, `v1.0.0` is
+tagged** ·
+**Head:** `1cd6a77` + this prompt's commit, pushed to
+[`DisturbedSage5840C/winback`](https://github.com/DisturbedSage5840C/winback) (**public**) ·
 **Deadline:** 5 September 2026.
 
 **The Day-9 gate is met, and it cost a real defect to meet it.** The plan's wording was
@@ -48,8 +50,14 @@ never on the menu. The refusal shown on camera is computed live on the complianc
 on one of **354** genuinely cap-exhausted invoices, by the same functions the gate
 calls. The script says all of this out loud rather than hoping nobody asks.
 
-**Nothing else is blocked on you right now.** Your first required action is today,
-Day 9. The full list is in §05, with dates.
+**The repo is public and `v1.0.0` is tagged.** Before tagging, every non-placeholder
+value in `.env` was searched against every blob in every commit: `RAZORPAY_KEY_SECRET`
+appears in none of them, `.env` was never tracked, and the only real credential in the
+published tree is the Razorpay test **`key_id`** — the public half of the pair. Details
+in §05.
+
+**Two things left, and both are yours.** Record the video today; submit tomorrow, early.
+§05 has both, with dates.
 
 ---
 
@@ -448,8 +456,9 @@ evidence; a Claude-credential preflight in `run_demo.sh`; the schema floor corre
 the tested path, now stated in the README **and** verified from the clone
 (`npm install` + `npm run build`, 0 vulnerabilities, clean build).
 
-What remains of Day 9 is not code: the **tagged release** (mine, once you have flipped the
-repo), the **video**, and the **public flip** — the last two are yours, in §05.
+**Day 9 is closed.** The repo is public, the history was swept for secrets before tagging
+(§05), and **`v1.0.0` is tagged and released** at the commit that met the fresh-clone
+gate. The only Day-9 item still open is the **video**, which is yours — §05.
 
 **Day 10 — buffer.** Submit early in the day, not at the wire.
 
@@ -461,11 +470,11 @@ lanes first, and the Day-8 gate is met without them.
 
 ## 05 — What is left, for you
 
-Ordered by date. **The first two are due today.**
+Ordered by date. **The repo flip is done. Two items remain, one of them today.**
 
 | When | What | Why it has to be you |
 |---|---|---|
-| **Day 9 · 4 Sep** | **Say the word to make the repo public.** `gh` is authenticated as `DisturbedSage5840C`, so the flip itself takes one command — but publishing the repo is irreversible in practice and outward-facing, so it does not happen without you saying so. | Publication decision |
+| ~~**Day 9 · 4 Sep**~~ | ~~**Say the word to make the repo public.**~~ ✅ **Done — [`DisturbedSage5840C/winback`](https://github.com/DisturbedSage5840C/winback) is `PUBLIC`.** Secret sweep run against every commit in the history before tagging: `RAZORPAY_KEY_SECRET` appears in **no commit**, `.env` was **never tracked**, and the only real credential value anywhere in the tree is the Razorpay test **`key_id`** in `LIVE_LANE_FINDINGS.md` — which is the public half of the pair, test-mode, and checkout-facing by design. The `WINBACK_DB_URL*` passwords in `.env.example` are `*_dev` literals bound to `localhost:55432` and matching `docker-compose.yml`; they have to be there for `bootstrap.sh` to work and they authorise nothing off this machine. 164 tracked files, no data dumps, no PII — the customer data is synthetic and is not committed at all. | Publication decision |
 | **Day 9 · 4 Sep** | **Record the 5-minute video.** `docs/DEMO_SCRIPT.md` is now firm, not an outline: an eight-row shot list with what to have open in each beat, the 2:45 refusal written out verbatim with the exact invoice id to type, the five numbers to say in the rigour beat, and a section naming what is deliberately *not* claimed on camera. Bring the stack up with `scripts/run_demo.sh` and check the health badge is green before you start. `ffmpeg` is not installed — QuickTime screen capture is the path. | Your voice, your screen |
 | **Day 10 · 5 Sep** | **Submit the application** at razorpay.com/buildathon, with whatever student-eligibility proof the form asks for. Track 03. Early in the day. | It is your application |
 
@@ -515,6 +524,7 @@ Newest first. One entry per working prompt.
 
 | # | Date | What changed |
 |---|---|---|
+| 10 | 4 Sep 2026 | **Repo public; history swept for secrets; `v1.0.0` tagged and released.** Going public makes every commit readable, so the sweep ran before the tag rather than after: each non-placeholder value in `.env` was searched against **every blob in every commit** by a script that never put a secret on a command line or printed one. Result — **`RAZORPAY_KEY_SECRET` is in no commit**, `.env` was never tracked in any commit, and the only real credential value published anywhere is the Razorpay test **`key_id`** in `LIVE_LANE_FINDINGS.md`, which is the public half of the pair and checkout-facing by design. The `WINBACK_DB_URL*` passwords in `.env.example` are `*_dev` literals bound to `localhost:55432`, matching `docker-compose.yml` — required for `bootstrap.sh` and authorising nothing off this machine. Published surface audited too: 164 tracked files, largest are `ml/artifacts/` and the three chart PNGs, no data dumps and no PII (the customer data is synthetic and is not committed at all). `v1.0.0` tagged at this commit — the tree that met the fresh-clone gate, plus this report. |
 | 9 | 4 Sep 2026 | **Day 9 gate met — and the fresh-clone test earned its place by failing.** The repository was cloned **from GitHub** (not the local path, so the thing tested is the thing pushed) into an empty directory on a machine with no Winback state, with the development database dumped to insurance first and brought down without `-v` so its volume survived. Cold results: `bootstrap.sh` exit 0 — venv, pinned deps, 11 tables, append-only DDL, immutability tests; dataset regenerated to the identical fingerprint `c32b2b063cd87707` and identical counts (4,000 / 4,000 / 30,210 / 33,866); `python -m eval` exit 0 with arms B and C reproducing exactly; **`python -m eval.report --check` → "matches the database"**, which is plan §12's byte-for-byte reproducibility gate met from cold; `npm install` + `npm run build` clean with 0 vulnerabilities; API `/health` answering from the clone with the `winback_reader` role and 11 tables. *Then the suite ran there and three `sim/tests/test_load.py` tests failed that pass here.* **There were two loaders.** `sim/load.py` writes the four fact tables **and** the `world_manifest` row in one transaction; `sim/generate.py` carried a Day-3 duplicate that wrote the tables and not the manifest — and `run_demo.sh` called that one. The batch opens with `require_fingerprint()`, so on any machine but this one the single command in the README would have seeded, trained a model, and died at the recovery batch on a database it had just loaded correctly. Invisible here only because this database was loaded by the correct path on Day 5. The duplicate is **deleted** — 76 lines, not repaired, because the defect was that there were two — and `--load` delegates to `sim.load.load()`; verified in the clone where it failed: manifest written at `v1 / c32b2b063cd87707 / 33866`, `require_fingerprint()` returning instead of raising, all ten tests green. Two more fixes off the same test: a **Claude-credential preflight** in `run_demo.sh` (it validated docker, npm and python but not the one credential the batch needs, so a stranger crashed *after* seeding and training), and the schema floor corrected **8 → 11** in both scripts (a volume missing all four `eval_*` tables passed as healthy and only complained a day later). `require_fingerprint`'s docstring claimed the API calls it at startup; the API does not, and should not — corrected rather than wired up, because a read-only view refusing to boot would take the dashboard down over a condition `/health` already reports. **README rewritten** — it still said "Day 4 of 10, 360 tests passing" with Days 5–8 unchecked, understating four finished days to the first person to read the repo; it now carries the four-arm result with the money reported as the tie it is (₹28, interval containing zero) and the legality as the result that is not (66 violations against 0), a "what broke" section, and the fresh-clone evidence including the defect. `WHAT_BROKE.md` entry 42. |
 | 8 | 4 Sep 2026 | **Day 7 and Day 8 both closed; the MVP checkpoint is green.** *Gate work:* the last mock (`dashboard/src/data/demo.ts`) deleted rather than orphaned, so "no mocks anywhere" is compiler-enforced; a `/health` badge in the header; responsive and dark-mode passes; the four animations audited against `FRONTEND_SPEC.md`; page title and meta corrected; `ARCHITECTURE.md` §06 and `FRONTEND_SPEC.md` reconciled to the shipped Vite stack. *Resilience:* `scripts/run_demo.sh` (one-command bring-up) and `scripts/failure_drill.sh` (two-phase: a clean baseline, then the local MCP killed mid-run) both written and passing; the MCP fallback ladder now demotes local → remote → off with the reason recorded, after a mount/reachability defect that made a dead stdio server look healthy; `LIVE_LANE_FINDINGS.md` §04.3 records why `TOOLSETS` must be space-separated (`razorpay/mcp` reads a comma-joined value as one toolset name and refuses to start). *Two defects, one of them serious:* `GET /invoices/{id}/compliance?at=` returned a 500 on every call — a naive timestamp reached `consent_gate`, which refuses to guess a timezone — now normalised to UTC and exposed in the panel as an "as of" control, which is what makes the frozen dataset answerable at the moment each invoice was live; and **the window rule `strftime`'d in the caller's timezone and labelled it "IST" unconditionally**, so every API lookup wrote a permanent `authorizing_rule` naming an hour 5h30m off, about the one rule that is entirely about the hour. The verdict was always correct and every test fixture was IST-aware, which is why nothing caught it — now converted before formatting, with two tests parametrized over three zones. *Demo:* `docs/DEMO_SCRIPT.md` rewritten from a 27-line outline to a firm shot list, with the 2:45 refusal written out verbatim (`inv_3890_01`, four APPROVEs against one DENY) and a section stating what is deliberately **not** claimed on camera — there is no red DENY in the batch trace, because all 428 `decisions` rows are APPROVE by design, and none was staged. Two `WHAT_BROKE.md` entries. 612 tests pass, `ruff` clean, `tsc --noEmit` and `vite build` clean. |
 | 7 | 3 Sep 2026 | **Frontend delivered (`frontend.zip`, Vite not Next.js) and hardened page by page against the live API.** Five real defects found and fixed the same way each time — curl the real endpoint, diff against the frontend's assumed TypeScript types, correct types + components + demo fixtures, verify with `tsc`/`vite build`/a real Playwright browser: Worklist's `{items,total}` vs the real `{total,rows}`; Evaluation's bare-string `run` and stale `unit`/`verdict_label` fields; Invoice's fully-nested `{invoice,attempts,decisions,audit_trail}` shape with renamed fields throughout (largest single fix); `RootCauseChip` crashing on a genuinely-`null` (not-yet-classified) `root_cause_class`; the live trace's `since=''` 422-looping on every first poll (fixed by omitting the param when null, `URLSearchParams`-built like the existing `outcome` param) plus its own separately-invented `TraceEvent` field names. Compliance page checked and found already correct. CORS opened for the Vite dev port (8443). `api/main.py` CORS change plus the full `dashboard/` tree committed. |

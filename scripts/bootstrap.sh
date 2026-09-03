@@ -59,8 +59,11 @@ docker exec winback-db pg_isready -U winback_owner -d winback >/dev/null 2>&1 ||
 # failure mode, so check for the tables rather than trusting that the container is up.
 TABLES=$(docker exec winback-db psql -U winback_owner -d winback -tAc \
   "SELECT count(*) FROM pg_tables WHERE schemaname='public'")
-if [[ "$TABLES" -lt 8 ]]; then
-  fail "Postgres is up but the schema did not load (found $TABLES tables, expected 8).
+# 11 is the whole schema: 7 fact/world tables plus the 4 eval_* tables. The floor used to
+# be 8, which is the wrong kind of lenient — it passes a volume where the eval tables
+# never got created and only tells you so a day later, from `python -m eval`.
+if [[ "$TABLES" -lt 11 ]]; then
+  fail "Postgres is up but the schema did not load fully (found $TABLES tables, expected 11).
    The init scripts only run against an empty volume. Reset with:
        docker compose down -v && docker compose up -d"
 fi

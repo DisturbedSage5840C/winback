@@ -773,82 +773,6 @@ def build_dataset(
     )
 
 
-# --------------------------------------------------------------------------- load
-
-
-LOAD_ORDER = ("customers", "subscriptions", "invoices", "payment_attempts")
-
-
-def load(dataset: Dataset) -> dict[str, int]:
-    """Write the dataset into Postgres, replacing whatever was there.
-
-    Imported lazily so ``build_dataset`` stays usable — and testable — with no
-    database running. Day 3's realism work needs the rows, not the server.
-    """
-    from core.db import owner_connection, reset_world
-
-    reset_world()
-    written: dict[str, int] = {}
-
-    with owner_connection() as conn, conn.cursor() as cur:
-        cur.executemany(
-            "INSERT INTO customers (customer_id, customer_hash, signup_date,"
-            " consent_status, consent_updated_at, salary_day)"
-            " VALUES (%s, %s, %s, %s, %s, %s)",
-            [
-                (c.customer_id, c.customer_hash, c.signup_date, c.consent_status,
-                 c.consent_updated_at, c.salary_day)
-                for c in dataset.customers
-            ],
-        )
-        written["customers"] = len(dataset.customers)
-
-        cur.executemany(
-            "INSERT INTO subscriptions (subscription_id, customer_id, method, bank,"
-            " mcc_category, amount_paise, status, mandate_start, paid_count,"
-            " remaining_count, cohort) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            [
-                (s.subscription_id, s.customer_id, s.method, s.bank, s.mcc_category,
-                 s.amount_paise, s.status, s.mandate_start, s.paid_count,
-                 s.remaining_count, s.cohort)
-                for s in dataset.subscriptions
-            ],
-        )
-        written["subscriptions"] = len(dataset.subscriptions)
-
-        cur.executemany(
-            "INSERT INTO invoices (invoice_id, subscription_id, cycle_number,"
-            " amount_paise, charge_at, notice_sent_at, status)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            [
-                (i.invoice_id, i.subscription_id, i.cycle_number, i.amount_paise,
-                 i.charge_at, i.notice_sent_at, i.status)
-                for i in dataset.invoices
-            ],
-        )
-        written["invoices"] = len(dataset.invoices)
-
-        cur.executemany(
-            "INSERT INTO payment_attempts (attempt_id, invoice_id, subscription_id,"
-            " attempt_number, attempted_at, is_non_peak, action, amount_paise, outcome,"
-            " error_code, error_source, error_step, error_reason, root_cause_class,"
-            " observed, censoring_reason, oracle_seed)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            [
-                (a.attempt_id, a.invoice_id, a.subscription_id, a.attempt_number,
-                 a.attempted_at, a.is_non_peak, a.action, a.amount_paise, a.outcome,
-                 a.error_code, a.error_source, a.error_step, a.error_reason,
-                 a.root_cause_class, a.observed, a.censoring_reason, a.oracle_seed)
-                for a in dataset.attempts
-            ],
-        )
-        written["payment_attempts"] = len(dataset.attempts)
-
-        conn.commit()
-
-    return written
-
-
 # --------------------------------------------------------------------------- cli
 
 
@@ -891,10 +815,15 @@ def main() -> None:
     print(f"  revenue at risk       {format_rupees(at_risk)}")
 
     if args.load:
-        written = load(dataset)
-        print("\nloaded into Postgres:")
-        for table in LOAD_ORDER:
-            print(f"  {table:<18} {written[table]:,}")
+        # Delegated to `sim.load`, not reimplemented here. This module used to carry its
+        # own writer, and the two drifted: `sim.load` writes the `world_manifest` row and
+        # this one did not, so a database seeded through `--load` looked complete and then
+        # failed `require_fingerprint()` at the top of the batch with "no world loaded".
+        # Imported inside the function because `sim.load` imports this module.
+        from sim.load import load
+
+        print()
+        print(load(dataset))
 
 
 if __name__ == "__main__":

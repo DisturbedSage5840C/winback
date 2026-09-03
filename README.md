@@ -51,9 +51,32 @@ functions with boundary tests, and the agent physically cannot execute a money-m
 tool without an approval from it on record — enforced through the Agent SDK's
 `can_use_tool` callback, not through prompting.
 
-## 04 — Status
+## 04 — The result
 
-Day 4 of 10 (26 Aug → 5 Sep 2026). **360 tests passing, 99% coverage on `compliance/`.**
+On the held-out cohort — 190 failed invoices, replayed against the same oracle seeds by
+every arm, 10,000-resample paired bootstrap over subscriptions:
+
+| Arm | Policy | Legally recovered | Legal attempts | Violations | ₹ / legal attempt |
+|---|---|---:|---:|---:|---:|
+| A | Never retry, always escalate | ₹0 | 0 | 0 | — |
+| B | Retry everything to the cap, any time | ₹6,39,598 | 210 | **66** | ₹3,045.70 |
+| C | Legacy fixed-offset dunning | ₹53,490 | 63 | **120** | ₹849.05 |
+| **D** | **Winback** | **₹6,39,626** | 197 | **0** | **₹3,246.83** |
+
+**Against the naive baseline, Winback recovers ₹28 more — on ₹6.4 lakh, with a paired
+interval of [−₹2,697, ₹2,781] that contains zero.** The money is a tie, and it is
+reported as a tie. What is not a tie is the legality: **66 violations against 0**,
+interval [−96, −42], excluding zero. Same money, inside the law, on thirteen fewer
+attempts.
+
+Arm C is the interesting one. It recovers ₹5,57,737 in raw rupees — and only **₹53,490**
+of that legally, because 81 of its retries land inside a peak window. A merchant running
+it today would believe it works.
+
+## 05 — Status
+
+Complete through **Day 8 of 10** (26 Aug → 5 Sep 2026). **612 tests passing, 99%
+coverage on `compliance/`.**
 
 | | |
 |---|---|
@@ -63,22 +86,81 @@ Day 4 of 10 (26 Aug → 5 Sep 2026). **360 tests passing, 99% coverage on `compl
 | ✅ | Live-lane spike — all 11 probes resolved, no unknowns carried forward ([findings](docs/LIVE_LANE_FINDINGS.md)) |
 | ✅ | World simulator + counterfactual oracle — dataset **frozen** at `c32b2b063cd87707`, 4,000 mandates / 33,866 attempts, realism gate 13 PASS / 6 ungraded / 0 FAIL ([data](docs/DATA.md)) |
 | ✅ | Calibrated model **v1 frozen** — sigmoid chosen out-of-fold, isotonic disqualified for asserting certainty; test ECE **0.034** where the merchant had data and **0.442** where it did not, and it still ranks correctly there ([evaluation](docs/EVALUATION.md)) |
-| ⬜ | Four-arm paired evaluation (Day 5) |
-| ⬜ | Agent orchestrator + Razorpay MCP (Day 6) |
-| ⬜ | Dashboard (Days 7–8) |
+| ✅ | Four-arm paired counterfactual evaluation — 10,000-resample cluster bootstrap, design frozen before results existed |
+| ✅ | Agent orchestrator on the Claude Agent SDK — `can_use_tool` money gate, append-only audit hooks, Razorpay MCP mode switch, both execution adapters. Batch **190/190 unattended**; the live cohort carries real `plink_…` IDs |
+| ✅ | Dashboard — overview, worklist, drill-down, compliance panel, evaluation. No mocked data anywhere |
 
-## 05 — Running it
+## 06 — Running it
+
+Two commands from a fresh clone:
 
 ```bash
-cp .env.example .env          # no Razorpay credentials needed for the batch lane
-docker compose up -d          # Postgres 17 + schema + append-only DDL
-python -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m pytest    # the compliance and audit suites are the thing to read first
+./scripts/bootstrap.sh    # venv, pinned deps, Postgres 17, schema, append-only DDL
+./scripts/run_demo.sh     # seed → model → batch → API on :8000 → dashboard on :8443
 ```
 
-`scripts/run_demo.sh` (Day 9) runs the whole loop end to end from a fresh clone.
+`bootstrap.sh` writes `.env` from `.env.example` for you; **no Razorpay credentials are
+needed** for the batch lane. `run_demo.sh --no-ui` runs the backend alone, and
+`--reseed` rebuilds the world from the frozen seed — it is the only thing in this
+repository that will delete an audit trail, which is why it is opt-in.
 
-## 06 — Honest limitations
+The recovery batch is the one stage that needs a Claude credential: `claude_agent_sdk`
+drives the `claude` CLI as a subprocess, so either that binary is on `PATH` and signed
+in, or `ANTHROPIC_API_KEY` is exported. `run_demo.sh` checks for this *before* seeding
+rather than failing three minutes in. Seed, training, evaluation, the API and the
+dashboard all run without one.
+
+The dashboard installs with **`npm install`** — that is the tested path. A
+`pnpm-lock.yaml` is committed too, but pnpm is not installed on the build machine and
+that route is unverified; if you have a preference, npm is the one with evidence
+behind it.
+
+**This was checked, not assumed — and it failed the first time.** On 4 September this
+repository was cloned from GitHub into an empty directory on a machine with no Winback
+state, bootstrapped, and run. 11 tables and the append-only DDL loaded, the dataset
+regenerated to the same fingerprint `c32b2b063cd87707` and the same 33,866 attempts, the
+dashboard installed and built clean, and `python -m eval.report --check` confirmed the
+committed `docs/EVALUATION.md` is byte-for-byte what that fresh database generates.
+
+Then the full suite ran in the clone and three tests failed that pass here. The demo
+script was seeding through a duplicate loader that never wrote the `world_manifest` row,
+so the batch's own `require_fingerprint()` guard would have killed `run_demo.sh` three
+stages in — on every machine except this one, which was loaded by the correct path back
+on Day 5 and had been sailing through the guard ever since. The duplicate is deleted and
+the fix is verified against the clone's database, where it actually failed. The whole
+entry is [in the log](docs/WHAT_BROKE.md); it is the clearest thing in this repository
+about why "it works on my machine" is not a test.
+
+## 07 — What broke
+
+[`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) has **42 entries**, written as they happened
+rather than reconstructed at the end. Four worth reading, because they are the four
+kinds of mistake this project actually made:
+
+- **`allowed_tools` auto-approves before the money gate is consulted.** The whole
+  security claim rests on `can_use_tool` refusing unapproved spend — and listing a
+  money-moving tool in `allowed_tools` short-circuits that callback entirely. The gate
+  was real and the configuration quietly bypassed it. The money tools are now
+  deliberately absent from `allowed_tools`, and an approval is a single-use key at exact
+  coordinates, popped rather than read.
+- **The censored slice was easier because my code made it easier.** The
+  observed-vs-censored calibration gap is a headline claim, and for a while it was
+  flattering me: the censored rows were being constructed in a way that made them
+  simpler to predict. A finding that makes your own result look better is the one to
+  distrust first.
+- **The window rule wrote the wrong hour into the permanent record.** It formatted the
+  time in whatever timezone the caller passed and appended the literal string "IST". The
+  *verdict* was never wrong — but that sentence is copied verbatim into
+  `decisions.authorizing_rule` and shown on the compliance chip, so every API lookup
+  recorded an hour 5h30m off, about the one rule that is entirely about the hour. Every
+  test fixture was IST-aware, which is exactly why nothing caught it.
+- **The demo script called a duplicate loader that never wrote the manifest row.** Found
+  on the last day, by the clean-checkout test, three stages into the one command this
+  README tells you to run. It could not fail here — this machine's database was loaded
+  by the correct path on Day 5 — and it would have failed on yours. "Works on my machine"
+  is not a test, and this is the entry that proves it.
+
+## 08 — Honest limitations
 
 Stated here rather than waiting to be asked.
 
@@ -98,7 +180,7 @@ Stated here rather than waiting to be asked.
   front of it are real, and payment links are created with `notify: {sms: false,
   email: false}` so a real artifact exists without an unregistered send.
 
-## 07 — Documentation
+## 09 — Documentation
 
 | | |
 |---|---|
@@ -108,6 +190,8 @@ Stated here rather than waiting to be asked.
 | [`docs/EVALUATION.md`](docs/EVALUATION.md) | Four-arm results, generated from the database |
 | [`docs/LIVE_LANE_FINDINGS.md`](docs/LIVE_LANE_FINDINGS.md) | What the Razorpay API actually permits |
 | [`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) | The failure log, written as it happened |
+| [`docs/FRONTEND_SPEC.md`](docs/FRONTEND_SPEC.md) | The dashboard contract — pages, endpoints, palette, motion budget |
+| [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) | The five-minute video, shot by shot, with what is deliberately not claimed |
 | [`COMPLETION_REPORT.md`](COMPLETION_REPORT.md) | Live build status against the ten-day plan — what is done, what is left, and who owns it |
 
 ---

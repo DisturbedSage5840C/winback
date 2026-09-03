@@ -4,33 +4,41 @@
 > here disagrees with the repo, the repo is right and this file is stale — say so and
 > it gets fixed in the same turn.
 
-**As of:** 4 September 2026 · **Plan day:** 8 of 10 — **Day 7 and Day 8 are both
-complete and the MVP checkpoint is green** ·
-**Head:** `56c0909` + this prompt's commit, pushed to `DisturbedSage5840C/winback` (private) ·
+**As of:** 4 September 2026 · **Plan day:** 9 of 10 — **the Day-9 gate is met: the
+one-command demo now works on a fresh clone, and it did not before today** ·
+**Head:** `ebb207a` + this prompt's commit, pushed to `DisturbedSage5840C/winback` (private) ·
 **Deadline:** 5 September 2026.
 
-**The Day-8 gate is met.** The plan's own words for it were *"MVP checkpoint. Not green
-→ no stretch lane, no exceptions."* It is green: the compliance panel and evaluation
-page are live on real rows, the four motion-budget animations are audited against
-`FRONTEND_SPEC.md`, the deliberate failure drill runs as a script and passes both
-phases, and `docs/DEMO_SCRIPT.md` has gone from a 27-line outline to a shot-by-shot
-script whose every id, string and number was read out of the running system. The
-stretch lane is not being taken — §06 said the buffer was gone two days ago and that
-has not changed. What is left is Day 9: docs, a fresh-clone test, the video, and the
-repo flip.
+**The Day-9 gate is met, and it cost a real defect to meet it.** The plan's wording was
+*"One-command demo works on a fresh clone."* That was tested the only way it can honestly
+be tested: this repository was cloned **from GitHub** — not from the local path, so what
+is actually pushed is what got run — into an empty directory on a machine carrying no
+Winback state. `bootstrap.sh` came up cold: venv, pinned deps, 11 tables, append-only
+DDL, immutability tests green. The dataset regenerated to the identical fingerprint
+`c32b2b063cd87707` with identical counts. `python -m eval` reproduced arms B and C
+exactly. `python -m eval.report --check` confirmed the committed `docs/EVALUATION.md` is
+byte-for-byte what that fresh database generates — plan §12's reproducibility gate, met
+from cold. The dashboard installed and built clean on `npm install`, and the API answered
+`/health` from the clone with the reader role and all 11 tables.
 
-**Three real defects were found in the last stretch, and one of them mattered.** The
-compliance panel's `at` parameter — the control that lets a reviewer ask *what would
-the guardrail have said while this invoice was live* — existed and had never worked;
-a naive timestamp reached `consent_gate`, which correctly refuses to guess a timezone,
-and the endpoint returned a 500. That is now normalised to UTC and tested. Underneath
-it was the worse one: **the window rule formatted its hour in whatever timezone the
-caller happened to pass and then labelled the result "IST" regardless.** The verdict
-was never wrong — `is_non_peak` always did its own conversion — but the *sentence* is
-copied verbatim into `decisions.authorizing_rule` and rendered on the compliance chip,
-so every API lookup produced a permanent record naming an hour 5h30m off, about the one
-rule that is entirely about the hour. Every guardrail test fixture was IST-aware, which
-is exactly why nothing caught it. Both are in `WHAT_BROKE.md` under 4 Sep.
+**Then the suite ran in the clone and three tests failed that pass here — and they were
+right.** `scripts/run_demo.sh` seeded through `sim.generate --load`, a Day-3 duplicate
+loader that writes the four fact tables and **not** the `world_manifest` row. The batch
+opens with `require_fingerprint()` (`agent/orchestrator.py:402`). So on any machine but
+this one, the single command in the README would have seeded, trained a model, and then
+died at the recovery batch on a database it had just loaded correctly. It was invisible
+here because this database was loaded through the correct path on Day 5 and has had a
+manifest row ever since. The duplicate is deleted — seventy-six lines, not repaired, because
+the defect was that there were two — and `--load` now delegates to `sim.load.load()`. The
+fix was verified in the clone, where it actually failed: manifest written, guard clearing,
+all ten `sim/tests/test_load.py` green. Entry 42 in `WHAT_BROKE.md`.
+
+**Two smaller things fixed off the same test.** `run_demo.sh` validated docker, npm and
+python but not the Claude credential, so a stranger with neither the CLI nor a key would
+have crashed inside the batch *after* waiting through seeding and training; there is now
+a preflight that fails early with the actual remedy. And both scripts accepted a schema
+of `>= 8` tables while the real schema is 11 — a volume missing all four `eval_*` tables
+would have passed as healthy and only complained a day later, from `python -m eval`.
 
 **One thing in the demo script is a deliberate absence, not an oversight.** All 428
 `decisions` rows carry `guardrail_verdict = APPROVE`, so there is no red DENY in the
@@ -49,16 +57,17 @@ Day 9. The full list is in §05, with dates.
 
 | | |
 |---|---|
-| Tests | **609 passing**, 0 skipped, 0 xfail — 587 across `compliance` / `sim` / `ml` / `eval` / `core` / `agent`, 22 across `api` |
+| Tests | **612 passing**, 0 skipped, 0 xfail — 590 across `compliance` / `sim` / `ml` / `eval` / `core` / `agent`, 22 across `api`. Also run green from a cold GitHub clone |
 | Coverage | **99%** on `compliance/` — the suite a panelist reads first |
 | Dataset | **frozen** at fingerprint `c32b2b063cd87707` — 4,000 mandates, 30,210 invoices, 33,866 attempts, 786 censored (2.3%) |
 | Realism gate | 19 checks — **13 PASS · 6 ungraded `[REPORT]` · 0 FAIL** |
 | Model | **v1 frozen** — XGBoost + sigmoid calibration, chosen out-of-fold, scored once on the held-out cohort |
 | Headline honesty number | test ECE **0.034** where the merchant had data, **0.442** where it did not, still correctly ordered there |
 | Headline result | **−66 compliance violations vs the naive baseline, CI [−96, −42]**, at ₹28 more legally recovered — a difference whose interval spans zero, and is reported as a tie |
-| Docs | 2,887 lines across 8 files, all committed — `WHAT_BROKE.md` alone is 1,238 |
+| Docs | 3,697 lines across 9 files, all committed — `WHAT_BROKE.md` alone is 1,457, at 42 entries |
 | Agent | full batch **190/190 unattended, exit 0**; live cohort carries real `plink_…` IDs |
 | Lint | `ruff check .` clean |
+| Fresh clone | cloned from GitHub into an empty directory and run cold: bootstrap green, fingerprint reproduced, `eval.report --check` byte-for-byte, dashboard built, API serving |
 
 The thesis has not moved, and as of today it is **measured** rather than asserted:
 **rupees recovered per legal attempt consumed**, reported beside compliance violations by
@@ -83,7 +92,7 @@ plan's own gate wording, and it is only ticked when the gate is actually met.
 | **6** | 1 Sep | Agent SDK orchestrator, `can_use_tool` gate, PostToolUse audit, MCP mode switch, both adapters, full batch | ✅ *(finished 2 Sep)* | `agent/` — `orchestrator`, `tools`, `gate`, `hooks`, `mcp_config`, `adapters/`; 112 tests. `batch_v1` **190/190 unattended, exit 0**; `live_v1` / `live_v2` carry real `plink_…` IDs; `decisions` + `audit_log` populated in Postgres |
 | **7** | 2 Sep | FastAPI + Next.js — overview, worklist, drill-down on real data | ✅ *(Vite, not Next.js — see §04)* | `api/main.py` — 10 read-only endpoints over `winback_reader`, 22 tests, no mocked data anywhere. Live trace (`/runs/{id}/events`, cursored on `event_id`) and compliance panel (`/invoices/{id}/compliance`, `/compliance/window`) call `compliance/` rather than restating it. `dashboard/` (Figma-Make Vite export) delivered; Overview, Worklist, Invoice, and the live trace verified against real API shapes and fixed where they weren't (§03) |
 | **8** | 3 Sep | Compliance panel + evaluation page + four animations; failure drill; rough-cut video — **MVP checkpoint** | ✅ *(finished 4 Sep)* | `dashboard/src/pages/Compliance.tsx` + `Evaluation.tsx` on live data, with an "as of" control that supplies the clock the rules are functions of; the four animations audited against `FRONTEND_SPEC.md`; `scripts/failure_drill.sh` passing both phases; `docs/DEMO_SCRIPT.md` firm, every string in it read out of the running system |
-| **9** | 4 Sep | Docs, fresh-clone `run_demo.sh`, final video, repo public, tagged release | ⬜ | — |
+| **9** | 4 Sep | Docs, fresh-clone `run_demo.sh`, final video, repo public, tagged release | 🟡 **gate met; video + repo flip are yours** | Cloned from GitHub into an empty directory: bootstrap cold to 11 tables, dataset back to `c32b2b063cd87707`, `python -m eval` reproducing arms B and C, **`python -m eval.report --check` byte-for-byte green**, dashboard `npm install` + `npm run build` clean, API `/health` answering from the clone. The test found the manifest-loader defect that would have broken `run_demo.sh` on every machine but this one — fixed and re-verified in the clone. README rewritten (it still claimed Day 4 / 360 tests); `WHAT_BROKE.md` at 42 entries. All five plan docs present |
 | **10** | 5 Sep | Buffer, submit early | ⬜ | — |
 
 Plan sections not tied to a single day, and their state:
@@ -427,12 +436,20 @@ each invoice was live — without editing a row.
 stack (Vite + React 19 + TypeScript + Tailwind v4 + Framer Motion + `HashRouter`),
 not the originally-specified Next.js App Router.
 
-**Day 9 — shipping, and this is where the remaining work is.** All docs final;
-fresh-clone test of `scripts/run_demo.sh` in a clean directory; README's "what broke"
-log; tagged release; repo flipped public (on your word — see §05). One documentation
-item carried in from Day 8: `npm install` is the supported package-manager path —
-`pnpm` is not installed on this machine and both lockfiles are committed, so the
-README must say which one is the tested route rather than leaving a reader to guess.
+**Day 9 — the gate is met; what is left of it is yours.** The fresh-clone test ran from
+a GitHub clone in an empty directory and is described in the header — including the
+manifest-loader defect it found, which would have broken the one command in the README
+on every machine except this one. Also closed today: the README rewritten (it was still
+advertising "Day 4 of 10, 360 tests passing" with Days 5–8 unchecked, which understated
+four finished days to the first person who reads the repo) and now carrying the result
+table, the honest tie-on-money framing, a "what broke" section, and the fresh-clone
+evidence; a Claude-credential preflight in `run_demo.sh`; the schema floor corrected from
+8 to 11 in both scripts; and the carried-in Day-8 documentation item — `npm install` is
+the tested path, now stated in the README **and** verified from the clone
+(`npm install` + `npm run build`, 0 vulnerabilities, clean build).
+
+What remains of Day 9 is not code: the **tagged release** (mine, once you have flipped the
+repo), the **video**, and the **public flip** — the last two are yours, in §05.
 
 **Day 10 — buffer.** Submit early in the day, not at the wire.
 
@@ -498,6 +515,7 @@ Newest first. One entry per working prompt.
 
 | # | Date | What changed |
 |---|---|---|
+| 9 | 4 Sep 2026 | **Day 9 gate met — and the fresh-clone test earned its place by failing.** The repository was cloned **from GitHub** (not the local path, so the thing tested is the thing pushed) into an empty directory on a machine with no Winback state, with the development database dumped to insurance first and brought down without `-v` so its volume survived. Cold results: `bootstrap.sh` exit 0 — venv, pinned deps, 11 tables, append-only DDL, immutability tests; dataset regenerated to the identical fingerprint `c32b2b063cd87707` and identical counts (4,000 / 4,000 / 30,210 / 33,866); `python -m eval` exit 0 with arms B and C reproducing exactly; **`python -m eval.report --check` → "matches the database"**, which is plan §12's byte-for-byte reproducibility gate met from cold; `npm install` + `npm run build` clean with 0 vulnerabilities; API `/health` answering from the clone with the `winback_reader` role and 11 tables. *Then the suite ran there and three `sim/tests/test_load.py` tests failed that pass here.* **There were two loaders.** `sim/load.py` writes the four fact tables **and** the `world_manifest` row in one transaction; `sim/generate.py` carried a Day-3 duplicate that wrote the tables and not the manifest — and `run_demo.sh` called that one. The batch opens with `require_fingerprint()`, so on any machine but this one the single command in the README would have seeded, trained a model, and died at the recovery batch on a database it had just loaded correctly. Invisible here only because this database was loaded by the correct path on Day 5. The duplicate is **deleted** — 76 lines, not repaired, because the defect was that there were two — and `--load` delegates to `sim.load.load()`; verified in the clone where it failed: manifest written at `v1 / c32b2b063cd87707 / 33866`, `require_fingerprint()` returning instead of raising, all ten tests green. Two more fixes off the same test: a **Claude-credential preflight** in `run_demo.sh` (it validated docker, npm and python but not the one credential the batch needs, so a stranger crashed *after* seeding and training), and the schema floor corrected **8 → 11** in both scripts (a volume missing all four `eval_*` tables passed as healthy and only complained a day later). `require_fingerprint`'s docstring claimed the API calls it at startup; the API does not, and should not — corrected rather than wired up, because a read-only view refusing to boot would take the dashboard down over a condition `/health` already reports. **README rewritten** — it still said "Day 4 of 10, 360 tests passing" with Days 5–8 unchecked, understating four finished days to the first person to read the repo; it now carries the four-arm result with the money reported as the tie it is (₹28, interval containing zero) and the legality as the result that is not (66 violations against 0), a "what broke" section, and the fresh-clone evidence including the defect. `WHAT_BROKE.md` entry 42. |
 | 8 | 4 Sep 2026 | **Day 7 and Day 8 both closed; the MVP checkpoint is green.** *Gate work:* the last mock (`dashboard/src/data/demo.ts`) deleted rather than orphaned, so "no mocks anywhere" is compiler-enforced; a `/health` badge in the header; responsive and dark-mode passes; the four animations audited against `FRONTEND_SPEC.md`; page title and meta corrected; `ARCHITECTURE.md` §06 and `FRONTEND_SPEC.md` reconciled to the shipped Vite stack. *Resilience:* `scripts/run_demo.sh` (one-command bring-up) and `scripts/failure_drill.sh` (two-phase: a clean baseline, then the local MCP killed mid-run) both written and passing; the MCP fallback ladder now demotes local → remote → off with the reason recorded, after a mount/reachability defect that made a dead stdio server look healthy; `LIVE_LANE_FINDINGS.md` §04.3 records why `TOOLSETS` must be space-separated (`razorpay/mcp` reads a comma-joined value as one toolset name and refuses to start). *Two defects, one of them serious:* `GET /invoices/{id}/compliance?at=` returned a 500 on every call — a naive timestamp reached `consent_gate`, which refuses to guess a timezone — now normalised to UTC and exposed in the panel as an "as of" control, which is what makes the frozen dataset answerable at the moment each invoice was live; and **the window rule `strftime`'d in the caller's timezone and labelled it "IST" unconditionally**, so every API lookup wrote a permanent `authorizing_rule` naming an hour 5h30m off, about the one rule that is entirely about the hour. The verdict was always correct and every test fixture was IST-aware, which is why nothing caught it — now converted before formatting, with two tests parametrized over three zones. *Demo:* `docs/DEMO_SCRIPT.md` rewritten from a 27-line outline to a firm shot list, with the 2:45 refusal written out verbatim (`inv_3890_01`, four APPROVEs against one DENY) and a section stating what is deliberately **not** claimed on camera — there is no red DENY in the batch trace, because all 428 `decisions` rows are APPROVE by design, and none was staged. Two `WHAT_BROKE.md` entries. 612 tests pass, `ruff` clean, `tsc --noEmit` and `vite build` clean. |
 | 7 | 3 Sep 2026 | **Frontend delivered (`frontend.zip`, Vite not Next.js) and hardened page by page against the live API.** Five real defects found and fixed the same way each time — curl the real endpoint, diff against the frontend's assumed TypeScript types, correct types + components + demo fixtures, verify with `tsc`/`vite build`/a real Playwright browser: Worklist's `{items,total}` vs the real `{total,rows}`; Evaluation's bare-string `run` and stale `unit`/`verdict_label` fields; Invoice's fully-nested `{invoice,attempts,decisions,audit_trail}` shape with renamed fields throughout (largest single fix); `RootCauseChip` crashing on a genuinely-`null` (not-yet-classified) `root_cause_class`; the live trace's `since=''` 422-looping on every first poll (fixed by omitting the param when null, `URLSearchParams`-built like the existing `outcome` param) plus its own separately-invented `TraceEvent` field names. Compliance page checked and found already correct. CORS opened for the Vite dev port (8443). `api/main.py` CORS change plus the full `dashboard/` tree committed. |
 | 5 | 3 Sep 2026 | **Day 7, non-frontend half complete.** Three endpoints added: `GET /runs/{id}/events` (live trace, cursored on the `BIGSERIAL` `event_id`, each event joined to its `authorizing_rule`), `GET /invoices/{id}/compliance` (every rule's verdict plus the composed guardrail for a retry *and* a nudge, by calling `compliance/` rather than restating it), `GET /compliance/window` (peak/non-peak, countdown, next legal slots). Six new tests. Two defects fixed: `_already_worked` unioned `decisions` with `audit_log`, which — after `record_conclusion`/`record_silence` guaranteed a row per conclusion — inverted its own meaning and would have permanently stranded an invoice killed between its guardrail approval and its tool call (a session limit produced exactly one); and the panel called the window endpoint as a plain function, receiving FastAPI's `Query` default object instead of an `int`. Two `WHAT_BROKE.md` entries, `ARCHITECTURE.md` §05 rewritten. `batch_v2` halted a second time on the account session limit at 75/190 and is resuming. 609 tests pass, `ruff` clean. |

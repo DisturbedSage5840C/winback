@@ -304,9 +304,12 @@ def loaded_manifest() -> dict:
 def require_fingerprint(expected: str | None = None) -> str:
     """Assert the database holds the dataset the caller is about to reason about.
 
-    Called by the agent before a batch and by the API at startup. The cost of the check
-    is one query; the cost of skipping it is a run whose numbers are attributed to the
-    wrong world, discovered — if ever — by someone re-deriving a figure by hand.
+    Called by the agent before a batch — the one place where being wrong is permanent,
+    because the audit rows are append-only. The API is deliberately not a caller: it is a
+    read-only view and refusing to start would take the dashboard down over a condition
+    ``/health`` already reports. The cost of the check is one query; the cost of skipping
+    it is a run whose numbers are attributed to the wrong world, discovered — if ever —
+    by someone re-deriving a figure by hand.
     """
     expected = build_dataset().fingerprint() if expected is None else expected
     actual = loaded_manifest()["dataset_fingerprint"]

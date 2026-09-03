@@ -67,10 +67,28 @@ docker exec winback-db pg_isready -U winback_owner -d winback >/dev/null 2>&1 \
 # The init scripts only run against an empty volume, so a container that is up is not
 # the same as a database that is loaded — check the tables, not the process.
 TABLES=$(psql_q "SELECT count(*) FROM pg_tables WHERE schemaname='public'")
-(( TABLES >= 8 )) || fail \
-  "Postgres is up but the schema did not load (found $TABLES tables).
+(( TABLES >= 11 )) || fail \
+  "Postgres is up but the schema did not load fully (found $TABLES tables, expected 11).
    Reset with: docker compose down -v && ./scripts/bootstrap.sh"
 ok "database ready — $TABLES tables"
+
+# ---------------------------------------------------------------- claude credential
+# Checked here rather than at the batch stage, because seeding and training happen first
+# and discovering a missing credential three minutes into a cold start is a bad way to
+# learn it. claude_agent_sdk drives the `claude` CLI as a subprocess, so the agent loop
+# needs either that binary on PATH or ANTHROPIC_API_KEY in the environment. Every other
+# stage on this path — seed, train, eval, API, dashboard — runs without one.
+RUNS=$(psql_q "SELECT count(DISTINCT run_id) FROM audit_log")
+if (( RESEED )) || (( RUNS == 0 )); then
+  if ! command -v claude >/dev/null 2>&1 && [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+    fail "the recovery batch has to run — the audit log is empty — and there is no Claude
+   credential to run it with. Either install the CLI and sign in:
+       https://claude.com/claude-code
+   or export a key:
+       export ANTHROPIC_API_KEY=sk-ant-...
+   Nothing else on the demo path needs one."
+  fi
+fi
 
 # ---------------------------------------------------------------- seed
 INVOICES=$(psql_q "SELECT count(*) FROM invoices")
@@ -93,7 +111,7 @@ else
 fi
 
 # ---------------------------------------------------------------- batch
-RUNS=$(psql_q "SELECT count(DISTINCT run_id) FROM audit_log")
+# RUNS was read above, before the seed, so the credential check could fail early.
 if (( RESEED )) || (( RUNS == 0 )); then
   say "running the recovery batch (this is the agent loop — a few minutes)"
   "$PY" -m agent.orchestrator

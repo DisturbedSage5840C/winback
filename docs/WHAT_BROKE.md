@@ -1374,6 +1374,74 @@ it.
 
 ---
 
+## 2026-09-04 · Two loaders, and the demo called the one that lies
+
+**What happened.** The clean-checkout test — clone from GitHub into an empty directory,
+bootstrap, run — passed every gate it was written to check. Eleven tables, the dataset
+back to the same fingerprint `c32b2b063cd87707`, `python -m eval` reproducing arms B and
+C exactly, and `python -m eval.report --check` confirming the committed
+`docs/EVALUATION.md` is byte-for-byte what that fresh database generates.
+
+Then the test suite ran in the clone, and three tests in `sim/tests/test_load.py` failed
+that pass here:
+
+```text
+E  AssertionError: no world loaded — run `python -m sim.load` first
+```
+
+The clone had 30,210 invoices and 33,866 attempts and zero rows in `world_manifest`.
+
+**Why.** There are two loaders. `sim/load.py` is the real one: `COPY`, one transaction,
+and the `world_manifest` row written last and inside that same transaction, on the stated
+reasoning that "a manifest that could be committed without them would be a claim about a
+world that does not exist." `sim/generate.py` carried an older `load()` from Day 3 —
+`executemany`, no manifest — and `scripts/run_demo.sh` called *that* one:
+
+```bash
+"$PY" -m sim.generate --load
+```
+
+The two drifted the moment `sim/load.py` was written, and nothing connected them, so
+nothing noticed.
+
+The consequence is not cosmetic. `agent/orchestrator.py:402` opens the batch with
+`require_fingerprint()`. On a fresh clone that call raises. **`./scripts/run_demo.sh` —
+the one command in the README, the Day-9 gate, the thing a judge runs — would have
+seeded, trained a model, and then died at the recovery batch on a database it had just
+finished loading correctly.**
+
+This machine could not see it. The development database was loaded through `sim.load`
+back on Day 5, so it has had a manifest row ever since, and every batch since has sailed
+through the guard. The bug was invisible to every run on the machine that wrote it, and
+visible on the first run anywhere else.
+
+**Changed.**
+
+- `sim/generate.py` no longer has a writer. `--load` delegates to `sim.load.load()`,
+  which is the one that was always correct. Seventy-six lines of duplicate `INSERT`
+  statements deleted rather than repaired — the defect was that there were two, so
+  fixing the second one to match would have left the defect in place.
+- Verified where it failed, not where it passes: the clone's database, manifest empty,
+  `python -m sim.generate --load` → one manifest row at `v1 / c32b2b063cd87707 / 33866`,
+  `require_fingerprint()` returning the fingerprint instead of raising, and all ten tests
+  in `sim/tests/test_load.py` green.
+- `require_fingerprint`'s docstring claimed the API calls it at startup. The API does
+  not, and should not — it is a read-only view and refusing to boot would take the
+  dashboard down over a condition `/health` already reports. The docstring now says what
+  the code does.
+
+**Lesson.** The gate was "one command works on a fresh clone," and it was met by every
+measure that had been written down — schema, fingerprint, evaluation reproducibility, all
+green — while the command itself was broken three stages in. What found it was not a
+check anyone designed; it was running the *whole* suite somewhere else and reading three
+failures that had no business failing. A duplicated write path is the specific shape of
+this: both copies work, one is missing a line, and the one missing the line is the one
+the entry point calls. The real tell was there to be read months earlier — an error
+message naming a command (`run python -m sim.load first`) that the demo script does not
+run.
+
+---
+
 ## Open
 
 - **`batch_v2` is 75/190 and resuming.** The re-run that exercises full audit coverage has

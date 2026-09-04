@@ -1442,6 +1442,57 @@ run.
 
 ---
 
+## 2026-09-04 · The dashboard still introduced itself as the scaffold it came from
+
+**What happened.** Auditing dependency licences before choosing one for the repository,
+`license-checker --production` returned a clean permissive tree with a single
+`UNLICENSED` row:
+
+```text
+figma-make-app@1.0.0 → UNLICENSED
+```
+
+That is not a dependency. That is this project. `dashboard/package.json` had carried
+`"name": "figma-make-app"` since the export it was scaffolded from, through nine days of
+rewriting, and `dashboard/AGENTS.md` opened with the same name over a description of a
+project that no longer existed — "Primary application component and the usual starting
+point for UI work" pointing at `src/App.tsx`, which by then was forty lines of
+`HashRouter` handing off to five pages and seven components it did not mention.
+
+**Why it survived.** Nothing reads either one. `private: true` means the name is never
+published or resolved, so npm never had cause to complain; `AGENTS.md` is instructions
+for whoever works on the code next, and the person working on the code already knew what
+was in it. Both files are in the class of thing that is only ever wrong for someone
+else. The build did not care, the tests did not care, and the one tool that did care —
+a licence audit — was not a thing anyone had run before today.
+
+**What it would have cost.** A judge opening `dashboard/package.json` on a submission
+that argues for provenance and honest measurement would have read the name of a
+different product. The Figma-Make origin is disclosed, and has been since Day 7
+(`COMPLETION_REPORT.md` §02 and §04 both name it) — so this was never concealment. It
+was worse in a smaller way: a repository that had not finished saying what it was.
+
+**What changed.** `dashboard/package.json` and `package-lock.json` renamed to
+`winback-dashboard`, with `"license": "Apache-2.0"` added; the build re-run and verified
+to emit the identical bundle hash, because a rename must not be a change. `AGENTS.md`
+rewritten against the actual tree — `src/pages/`, `src/components/`, `src/lib/`, the
+semantic palette, the four-animation motion budget — and every claim in it checked
+against the source before it was written, including the two I had got wrong on the first
+pass (`hooks.ts` exports `useAsync`/`usePageVisible`/`usePrefersReducedMotion`/`useCountUp`,
+not a paging hook; `ui.tsx` exports named chips, not generic shells).
+
+`.figma/make/` stays. It is not residue: `vite.config.ts` imports `site.json` from it
+for the document shell and mounts four Figma Vite plugins. Deleting a directory because
+its name looks like leftovers is how you break a build on the last day.
+
+**The lesson.** Identity metadata is the last thing to be checked because nothing
+executes it. The check that finally caught it was a question asked for an unrelated
+reason — what are all the licences in this tree — which is the second time in two days
+that running a tool for a *different* purpose found the defect that the purpose-built
+gates could not. Broad tools find things narrow tests were never pointed at.
+
+---
+
 ## Open
 
 - **`batch_v2` is 75/190 and resuming.** The re-run that exercises full audit coverage has

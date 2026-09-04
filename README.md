@@ -135,7 +135,7 @@ about why "it works on my machine" is not a test.
 
 ## 07 — What broke
 
-[`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) has **42 entries**, written as they happened
+[`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) has **43 entries**, written as they happened
 rather than reconstructed at the end. Four worth reading, because they are the four
 kinds of mistake this project actually made:
 
@@ -196,6 +196,38 @@ Stated here rather than waiting to be asked.
 | [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) | The five-minute video, shot by shot, with what is deliberately not claimed |
 | [`COMPLETION_REPORT.md`](COMPLETION_REPORT.md) | Live build status against the ten-day plan — what is done, what is left, and who owns it |
 
+## 10 — License
+
+[**Apache License 2.0**](LICENSE). Chosen over MIT deliberately, for three reasons
+that are specific to what this repository contains rather than to habit:
+
+- **The patent grant is express (§3).** Retry sequencing over mandates is a
+  patent-dense corner of payments. MIT says nothing about patents and leaves an
+  implied licence to be argued about; Apache-2.0 grants one outright and terminates
+  it for anyone who sues over the work. The FSF puts it plainly: *"The patent
+  termination provision is a good thing, which is why we recommend the Apache 2.0
+  license for substantial programs over other lax permissive licenses."*
+- **§6 makes the non-affiliation operative.** It grants no right to the licensor's
+  trade names or marks. The disclaimer below stops being a courtesy and starts being
+  a term.
+- **§7 and §8 are the right posture for a compliance tool.** This code asserts what
+  NPCI's cap permits. If someone deploys it and it is wrong, the licence should say
+  so in more than MIT's single sentence — and it does, in two dedicated sections.
+
+Every dependency is permissive and compatible: MIT, BSD-3-Clause, ISC, PSF, and
+Apache-2.0 (xgboost). The one exception is **psycopg, which is LGPL-3.0-only** — and
+this repository references it in `requirements.txt` rather than redistributing it, so
+no combined work is ever conveyed; pip fetches it from PyPI on your machine, and the
+FSF lists Apache-2.0 as compatible with LGPLv3 in any case. Nothing here is vendored
+from a third party, so `NOTICE` carries no inherited attributions.
+
+What `NOTICE` does carry is the part that should survive a fork: this is not legal
+advice, the rules in `compliance/` are one reading of the circulars as they stood in
+September 2026, and the measured recovery is measured against a simulator. Apache-2.0
+§4(d) obliges derivative works to reproduce it, which is the whole reason the file
+exists.
+
 ---
 
 Independent submission. Not affiliated with or endorsed by Razorpay.
+Licensed under [Apache-2.0](LICENSE); see [`NOTICE`](NOTICE).

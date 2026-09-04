@@ -4,12 +4,38 @@
 > here disagrees with the repo, the repo is right and this file is stale — say so and
 > it gets fixed in the same turn.
 
-**As of:** 4 September 2026 · **Plan day:** 9 of 10 — **Day 9 is closed except for the
-video: the one-command demo works on a fresh clone, the repo is public, `v1.0.0` is
-tagged** ·
-**Head:** `1cd6a77` + this prompt's commit, pushed to
+**As of:** 4 September 2026 · **Plan day:** **10 of 10, started early** — Day 9 closed
+except the video; the repository is public, `v1.0.0` is tagged, and it is now
+**licensed** ·
+**Head:** `2e0f1d5` + this prompt's commit, pushed to
 [`DisturbedSage5840C/winback`](https://github.com/DisturbedSage5840C/winback) (**public**) ·
 **Deadline:** 5 September 2026.
+
+**The repository is licensed under [Apache-2.0](LICENSE), and the choice was researched
+rather than defaulted.** A public repo with no `LICENSE` is under exclusive copyright:
+GitHub's terms let anyone view and fork it, and nothing more — so until this commit, no
+judge had permission to run the code they were being asked to evaluate. Razorpay
+publishes no IP or licensing terms for the buildathon (checked today), so the choice was
+unconstrained and made on the merits. Apache-2.0 over MIT for three reasons specific to
+what is in this tree — the express patent grant in §3, because retry sequencing over
+mandates is a patent-dense corner of payments and MIT leaves an implied licence to be
+argued about; §6, which grants no rights in the licensor's marks and so turns the
+non-affiliation line into a term; and §7–§8, which are the right posture for code that
+asserts what NPCI's cap permits. Every dependency was inventoried: all permissive
+(MIT / BSD-3 / ISC / PSF / Apache-2.0) except **psycopg, LGPL-3.0-only**, which this repo
+references in `requirements.txt` and never redistributes, so no combined work is
+conveyed. Nothing is vendored, so `NOTICE` inherits no third-party attributions — it
+carries the disclaimers that should survive a fork instead, which Apache-2.0 §4(d)
+obliges derivative works to reproduce. Full reasoning in README §10.
+
+**The licence audit found a defect, which is the second time in two days that a tool run
+for an unrelated reason found what the purpose-built gates could not.**
+`license-checker --production` returned one `UNLICENSED` row: `figma-make-app@1.0.0` —
+not a dependency, but this project. `dashboard/package.json` had carried the scaffold's
+name through nine days of rewriting, and `dashboard/AGENTS.md` still described a project
+that no longer existed. Both fixed; the build re-run and verified to emit the identical
+bundle hash. `.figma/make/` stays, because `vite.config.ts` genuinely imports from it.
+Entry 43 in `WHAT_BROKE.md`.
 
 **The Day-9 gate is met, and it cost a real defect to meet it.** The plan's wording was
 *"One-command demo works on a fresh clone."* That was tested the only way it can honestly
@@ -72,7 +98,8 @@ in §05.
 | Model | **v1 frozen** — XGBoost + sigmoid calibration, chosen out-of-fold, scored once on the held-out cohort |
 | Headline honesty number | test ECE **0.034** where the merchant had data, **0.442** where it did not, still correctly ordered there |
 | Headline result | **−66 compliance violations vs the naive baseline, CI [−96, −42]**, at ₹28 more legally recovered — a difference whose interval spans zero, and is reported as a tie |
-| Docs | 3,697 lines across 9 files, all committed — `WHAT_BROKE.md` alone is 1,457, at 42 entries |
+| Docs | 3,748 lines across 9 files, all committed — `WHAT_BROKE.md` alone is 1,508, at 43 entries |
+| License | **Apache-2.0**, with a `NOTICE` that carries the non-affiliation and not-legal-advice statements into any fork. Dependency tree inventoried: all permissive, psycopg (LGPL-3.0-only) referenced and never redistributed |
 | Agent | full batch **190/190 unattended, exit 0**; live cohort carries real `plink_…` IDs |
 | Lint | `ruff check .` clean |
 | Fresh clone | cloned from GitHub into an empty directory and run cold: bootstrap green, fingerprint reproduced, `eval.report --check` byte-for-byte, dashboard built, API serving |
@@ -100,8 +127,8 @@ plan's own gate wording, and it is only ticked when the gate is actually met.
 | **6** | 1 Sep | Agent SDK orchestrator, `can_use_tool` gate, PostToolUse audit, MCP mode switch, both adapters, full batch | ✅ *(finished 2 Sep)* | `agent/` — `orchestrator`, `tools`, `gate`, `hooks`, `mcp_config`, `adapters/`; 112 tests. `batch_v1` **190/190 unattended, exit 0**; `live_v1` / `live_v2` carry real `plink_…` IDs; `decisions` + `audit_log` populated in Postgres |
 | **7** | 2 Sep | FastAPI + Next.js — overview, worklist, drill-down on real data | ✅ *(Vite, not Next.js — see §04)* | `api/main.py` — 10 read-only endpoints over `winback_reader`, 22 tests, no mocked data anywhere. Live trace (`/runs/{id}/events`, cursored on `event_id`) and compliance panel (`/invoices/{id}/compliance`, `/compliance/window`) call `compliance/` rather than restating it. `dashboard/` (Figma-Make Vite export) delivered; Overview, Worklist, Invoice, and the live trace verified against real API shapes and fixed where they weren't (§03) |
 | **8** | 3 Sep | Compliance panel + evaluation page + four animations; failure drill; rough-cut video — **MVP checkpoint** | ✅ *(finished 4 Sep)* | `dashboard/src/pages/Compliance.tsx` + `Evaluation.tsx` on live data, with an "as of" control that supplies the clock the rules are functions of; the four animations audited against `FRONTEND_SPEC.md`; `scripts/failure_drill.sh` passing both phases; `docs/DEMO_SCRIPT.md` firm, every string in it read out of the running system |
-| **9** | 4 Sep | Docs, fresh-clone `run_demo.sh`, final video, repo public, tagged release | 🟡 **gate met; video + repo flip are yours** | Cloned from GitHub into an empty directory: bootstrap cold to 11 tables, dataset back to `c32b2b063cd87707`, `python -m eval` reproducing arms B and C, **`python -m eval.report --check` byte-for-byte green**, dashboard `npm install` + `npm run build` clean, API `/health` answering from the clone. The test found the manifest-loader defect that would have broken `run_demo.sh` on every machine but this one — fixed and re-verified in the clone. README rewritten (it still claimed Day 4 / 360 tests); `WHAT_BROKE.md` at 42 entries. All five plan docs present |
-| **10** | 5 Sep | Buffer, submit early | ⬜ | — |
+| **9** | 4 Sep | Docs, fresh-clone `run_demo.sh`, final video, repo public, tagged release | 🟡 **gate met; video + repo flip are yours** | Cloned from GitHub into an empty directory: bootstrap cold to 11 tables, dataset back to `c32b2b063cd87707`, `python -m eval` reproducing arms B and C, **`python -m eval.report --check` byte-for-byte green**, dashboard `npm install` + `npm run build` clean, API `/health` answering from the clone. The test found the manifest-loader defect that would have broken `run_demo.sh` on every machine but this one — fixed and re-verified in the clone. README rewritten (it still claimed Day 4 / 360 tests); `WHAT_BROKE.md` at 43 entries. All five plan docs present. Repo public, history swept for secrets, `v1.0.0` tagged and released. **Open: the video only** |
+| **10** | 5 Sep | Buffer, submit early | 🟡 **started a day early** | Repository **licensed Apache-2.0** with a propagating `NOTICE`, chosen against a dependency-licence inventory and Razorpay's (absent) submission terms — README §10. The audit that produced it found the dashboard still named `figma-make-app`; renamed, `AGENTS.md` rewritten against the real tree, identical bundle hash. Full re-verification run green on the tree being submitted: **612 tests**, `ruff` clean, `eval.report --check` byte-for-byte. Submission itself is yours, §05 |
 
 Plan sections not tied to a single day, and their state:
 
@@ -460,7 +487,20 @@ the tested path, now stated in the README **and** verified from the clone
 (§05), and **`v1.0.0` is tagged and released** at the commit that met the fresh-clone
 gate. The only Day-9 item still open is the **video**, which is yours — §05.
 
-**Day 10 — buffer.** Submit early in the day, not at the wire.
+**Day 10 — started a day early, which is the whole point of a buffer.** The plan's gate
+is *"Submitted, not at the wire"*, and everything that is mine to do before that is now
+done. The repository is **licensed** — the one thing a public submission was still
+missing, and the one whose absence would have meant a judge could read the code but not
+run it. The licence audit paid for itself immediately by finding the stale dashboard
+identity (entry 43). And the tree that will actually be submitted was re-verified end to
+end rather than assumed: 612 tests green, `ruff` clean, `python -m eval.report --check`
+confirming `docs/EVALUATION.md` is still byte-for-byte what the database generates, and
+`npm run build` emitting the same bundle hash it did before the rename.
+
+What is deliberately *not* being done with the remaining buffer: no new features, no
+stretch lane, no refactors. A repository that passes its gates on the day before the
+deadline is finished, and the failure mode of a spare day is breaking something that
+worked. The buffer exists to absorb a problem, not to invite one.
 
 **Not being done, and deliberately:** the stretch lane (checkout-abandonment). §06
 recorded on Day 5 that the two-day buffer was spent; the plan's cut order puts stretch
@@ -478,8 +518,15 @@ Ordered by date. **The repo flip is done. Two items remain, one of them today.**
 | **Day 9 · 4 Sep** | **Record the 5-minute video.** `docs/DEMO_SCRIPT.md` is now firm, not an outline: an eight-row shot list with what to have open in each beat, the 2:45 refusal written out verbatim with the exact invoice id to type, the five numbers to say in the rigour beat, and a section naming what is deliberately *not* claimed on camera. Bring the stack up with `scripts/run_demo.sh` and check the health badge is green before you start. `ffmpeg` is not installed — QuickTime screen capture is the path. | Your voice, your screen |
 | **Day 10 · 5 Sep** | **Submit the application** at razorpay.com/buildathon, with whatever student-eligibility proof the form asks for. Track 03. Early in the day. | It is your application |
 
-One small decision, whenever you get to it:
+Two small decisions, whenever you get to it:
 
+- **The copyright line reads `Copyright 2026 DisturbedSage5840C`** — in `LICENSE`,
+  `NOTICE`, and `dashboard/package.json`. That is the identity that authored every commit
+  and published the repository, so it is accurate and a pseudonymous copyright holder is
+  perfectly valid. If you would rather the grant carry your legal name, it is a
+  three-file find-and-replace and nothing else changes. I did not put your **email**
+  anywhere in the licence files; it is already in the commit metadata, but a `LICENSE` is
+  a more public place for it than a commit trailer and that seemed like your call.
 - **`docs/index.html` is in the working tree and I did not write it.** 287 lines, a
   generic dark gradient on a system font stack — none of the Satoshi / `#0e0b08` /
   `#305eff` language the plan settled on. It is **excluded from every commit** until you
@@ -524,6 +571,7 @@ Newest first. One entry per working prompt.
 
 | # | Date | What changed |
 |---|---|---|
+| 11 | 4 Sep 2026 | **Licensed Apache-2.0; Day 10 opened a day early.** A public repo with no `LICENSE` is under exclusive copyright — GitHub's terms grant viewing and forking and nothing else — so until this commit a judge could read the code but had no permission to run it. Razorpay publishes no IP or licensing terms for the buildathon (checked at the source today), so the choice was made on the merits: **Apache-2.0 over MIT** for the express patent grant (§3, in a patent-dense corner of payments where MIT leaves an implied licence to be argued), §6 (no rights in the licensor's marks, which makes the non-affiliation line a term rather than a courtesy), and §7–§8 (the right disclaimer posture for code that asserts what NPCI's cap permits). `LICENSE` is the canonical text byte-for-byte with only the appendix filled in; `NOTICE` carries the not-legal-advice and non-affiliation statements that Apache-2.0 §4(d) obliges forks to reproduce. Both dependency trees inventoried: Python is MIT/BSD-3/Apache-2.0/PSF except **psycopg (LGPL-3.0-only)**, which is referenced in `requirements.txt` and never redistributed, so no combined work is conveyed; npm is MIT/ISC/0BSD/BSD-3. Nothing vendored, so `NOTICE` inherits no third-party attributions. **That audit found a defect:** the one `UNLICENSED` row was `figma-make-app@1.0.0` — this project, still wearing the scaffold's name through nine days of rewriting, with `dashboard/AGENTS.md` describing a tree that no longer existed. Renamed to `winback-dashboard` across `package.json` and `package-lock.json`, `AGENTS.md` rewritten against the real structure with every claim checked against source, and the build re-run to the identical bundle hash. `.figma/make/` kept — `vite.config.ts` genuinely imports `site.json` from it. Entry 43 in `WHAT_BROKE.md`. Submission tree re-verified: 612 tests, `ruff` clean, `eval.report --check` green. |
 | 10 | 4 Sep 2026 | **Repo public; history swept for secrets; `v1.0.0` tagged and released.** Going public makes every commit readable, so the sweep ran before the tag rather than after: each non-placeholder value in `.env` was searched against **every blob in every commit** by a script that never put a secret on a command line or printed one. Result — **`RAZORPAY_KEY_SECRET` is in no commit**, `.env` was never tracked in any commit, and the only real credential value published anywhere is the Razorpay test **`key_id`** in `LIVE_LANE_FINDINGS.md`, which is the public half of the pair and checkout-facing by design. The `WINBACK_DB_URL*` passwords in `.env.example` are `*_dev` literals bound to `localhost:55432`, matching `docker-compose.yml` — required for `bootstrap.sh` and authorising nothing off this machine. Published surface audited too: 164 tracked files, largest are `ml/artifacts/` and the three chart PNGs, no data dumps and no PII (the customer data is synthetic and is not committed at all). `v1.0.0` tagged at this commit — the tree that met the fresh-clone gate, plus this report. |
 | 9 | 4 Sep 2026 | **Day 9 gate met — and the fresh-clone test earned its place by failing.** The repository was cloned **from GitHub** (not the local path, so the thing tested is the thing pushed) into an empty directory on a machine with no Winback state, with the development database dumped to insurance first and brought down without `-v` so its volume survived. Cold results: `bootstrap.sh` exit 0 — venv, pinned deps, 11 tables, append-only DDL, immutability tests; dataset regenerated to the identical fingerprint `c32b2b063cd87707` and identical counts (4,000 / 4,000 / 30,210 / 33,866); `python -m eval` exit 0 with arms B and C reproducing exactly; **`python -m eval.report --check` → "matches the database"**, which is plan §12's byte-for-byte reproducibility gate met from cold; `npm install` + `npm run build` clean with 0 vulnerabilities; API `/health` answering from the clone with the `winback_reader` role and 11 tables. *Then the suite ran there and three `sim/tests/test_load.py` tests failed that pass here.* **There were two loaders.** `sim/load.py` writes the four fact tables **and** the `world_manifest` row in one transaction; `sim/generate.py` carried a Day-3 duplicate that wrote the tables and not the manifest — and `run_demo.sh` called that one. The batch opens with `require_fingerprint()`, so on any machine but this one the single command in the README would have seeded, trained a model, and died at the recovery batch on a database it had just loaded correctly. Invisible here only because this database was loaded by the correct path on Day 5. The duplicate is **deleted** — 76 lines, not repaired, because the defect was that there were two — and `--load` delegates to `sim.load.load()`; verified in the clone where it failed: manifest written at `v1 / c32b2b063cd87707 / 33866`, `require_fingerprint()` returning instead of raising, all ten tests green. Two more fixes off the same test: a **Claude-credential preflight** in `run_demo.sh` (it validated docker, npm and python but not the one credential the batch needs, so a stranger crashed *after* seeding and training), and the schema floor corrected **8 → 11** in both scripts (a volume missing all four `eval_*` tables passed as healthy and only complained a day later). `require_fingerprint`'s docstring claimed the API calls it at startup; the API does not, and should not — corrected rather than wired up, because a read-only view refusing to boot would take the dashboard down over a condition `/health` already reports. **README rewritten** — it still said "Day 4 of 10, 360 tests passing" with Days 5–8 unchecked, understating four finished days to the first person to read the repo; it now carries the four-arm result with the money reported as the tie it is (₹28, interval containing zero) and the legality as the result that is not (66 violations against 0), a "what broke" section, and the fresh-clone evidence including the defect. `WHAT_BROKE.md` entry 42. |
 | 8 | 4 Sep 2026 | **Day 7 and Day 8 both closed; the MVP checkpoint is green.** *Gate work:* the last mock (`dashboard/src/data/demo.ts`) deleted rather than orphaned, so "no mocks anywhere" is compiler-enforced; a `/health` badge in the header; responsive and dark-mode passes; the four animations audited against `FRONTEND_SPEC.md`; page title and meta corrected; `ARCHITECTURE.md` §06 and `FRONTEND_SPEC.md` reconciled to the shipped Vite stack. *Resilience:* `scripts/run_demo.sh` (one-command bring-up) and `scripts/failure_drill.sh` (two-phase: a clean baseline, then the local MCP killed mid-run) both written and passing; the MCP fallback ladder now demotes local → remote → off with the reason recorded, after a mount/reachability defect that made a dead stdio server look healthy; `LIVE_LANE_FINDINGS.md` §04.3 records why `TOOLSETS` must be space-separated (`razorpay/mcp` reads a comma-joined value as one toolset name and refuses to start). *Two defects, one of them serious:* `GET /invoices/{id}/compliance?at=` returned a 500 on every call — a naive timestamp reached `consent_gate`, which refuses to guess a timezone — now normalised to UTC and exposed in the panel as an "as of" control, which is what makes the frozen dataset answerable at the moment each invoice was live; and **the window rule `strftime`'d in the caller's timezone and labelled it "IST" unconditionally**, so every API lookup wrote a permanent `authorizing_rule` naming an hour 5h30m off, about the one rule that is entirely about the hour. The verdict was always correct and every test fixture was IST-aware, which is why nothing caught it — now converted before formatting, with two tests parametrized over three zones. *Demo:* `docs/DEMO_SCRIPT.md` rewritten from a 27-line outline to a firm shot list, with the 2:45 refusal written out verbatim (`inv_3890_01`, four APPROVEs against one DENY) and a section stating what is deliberately **not** claimed on camera — there is no red DENY in the batch trace, because all 428 `decisions` rows are APPROVE by design, and none was staged. Two `WHAT_BROKE.md` entries. 612 tests pass, `ruff` clean, `tsc --noEmit` and `vite build` clean. |

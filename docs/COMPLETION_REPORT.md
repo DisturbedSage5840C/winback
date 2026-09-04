@@ -7,7 +7,7 @@
 **As of:** 4 September 2026 · **Plan day:** **10 of 10, started early** — Day 9 closed
 except the video; the repository is public, `v1.0.0` is tagged, and it is now
 **licensed** ·
-**Head:** `92d75f9`, pushed to
+**Head:** `d67f4db`, pushed to
 [`DisturbedSage5840C/winback`](https://github.com/DisturbedSage5840C/winback) (**public**) ·
 **Deadline:** 5 September 2026.
 

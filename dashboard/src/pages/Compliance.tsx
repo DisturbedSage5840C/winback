@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getComplianceWindow, getInvoiceCompliance, getLiveWorklist, HttpError } from '../lib/api'
 import { useAsync } from '../lib/hooks'
-import { EmptyState, ErrorState, Panel, SectionHeader, Spinner } from '../components/ui'
+import { EmptyState, ErrorState, Panel, SectionHeader, Skeleton } from '../components/ui'
 import { WindowStrip } from '../components/WindowStrip'
 import { CompliancePanel } from '../components/CompliancePanel'
 import type { CompliancePanelData } from '../lib/types'
@@ -69,7 +69,7 @@ export function CompliancePage() {
       {/* 01 — Live window strip */}
       <Panel className="p-6">
         <SectionHeader index="01" title="Live non-peak window" caption="Ticks against the guardrail’s own arithmetic — re-fetched every 30s, never a drifting client clock." />
-        {window.loading && <Spinner />}
+        {window.loading && <WindowSkeleton />}
         {window.error != null && <ErrorState error={window.error} onRetry={window.reload} />}
         {window.data && <WindowStrip window={window.data} />}
       </Panel>
@@ -163,6 +163,24 @@ export function CompliancePage() {
           ))}
         </div>
       </Panel>
+    </div>
+  )
+}
+
+// Shaped like WindowStrip's own pill + 24h band + slots row.
+function WindowSkeleton() {
+  return (
+    <div>
+      <div className="flex items-center gap-3">
+        <Skeleton className="h-8 w-56 rounded-lg" />
+        <Skeleton className="ml-auto h-4 w-32" />
+      </div>
+      <Skeleton className="mt-3 h-7 w-full rounded-md" />
+      <div className="mt-3 flex gap-2">
+        <Skeleton className="h-5 w-16 rounded-md" />
+        <Skeleton className="h-5 w-16 rounded-md" />
+        <Skeleton className="h-5 w-16 rounded-md" />
+      </div>
     </div>
   )
 }

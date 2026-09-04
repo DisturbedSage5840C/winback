@@ -1540,6 +1540,59 @@ stand in for its neighbours nine days running.
 
 ---
 
+## 2026-09-04 · `npm run format` silently broke the syntax it was asked to tidy
+
+**What happened.** Four small, additive frontend changes — a `Skeleton`/`PanelSkeleton`
+loading state, route-transition motion, and a `CopyableId` copy-to-clipboard component —
+were implemented across eight files in `dashboard/src/`, verified clean with
+`npx tsc --noEmit`, and then run through `npm run format` because `AGENTS.md` lists it
+under "Checks." `oxfmt` rewrote every file in `src/` — not just the eight edited — and in
+doing so **dropped the semicolon inside inline TypeScript object type annotations**,
+turning `{ stop_reason: string; invoices: number }[]` into the syntactically invalid
+`{ stop_reason: string invoices: number }[]`. `tsc --noEmit` immediately caught it: eight
+errors across six files, three of which (`CompliancePanel.tsx`, `Funnel.tsx`, `lib/api.ts`)
+had never been touched by hand. A separate pass later found the same tool had also
+rewritten every single-quoted string in `dashboard/vite.config.ts` to double-quoted —
+syntactically harmless, but an unrequested full-file reformat of a file nobody had
+touched this session, missed in the first recovery because that file wasn't on the list
+of "files I edited" the recovery was scoped to.
+
+**Why it survived.** `AGENTS.md` lists `npm run format` as a check without qualifying
+what it touches or how to verify its own output, so it read as safe to run
+unconditionally, the same way `tsc --noEmit` or `vite build` are. Nothing about the
+command's own output flagged the corruption — it exits 0, reports files reformatted, and
+says nothing about syntax validity, because reformatting and validating are different
+jobs and this tool only claims to do the first. The `vite.config.ts` half survived even
+longer: `git status` after the first recovery only listed the eight files that had been
+intentionally edited plus the ten that `tsc` had flagged, so a file that was corrupted
+but never surfaced an error (quote-style changes are valid TS) had no reason to be
+checked.
+
+**What it would have cost.** Caught here by `tsc --noEmit`, which is exactly the
+verification step the frontend plan's own §03 mandates after every change — so the
+actual cost was a full revert-and-redo of eight files, not a broken build. Had that step
+been skipped, or had the corruption landed in a file `tsc` doesn't type-check as strictly,
+it would have shipped a genuinely broken production build a day before the buildathon
+deadline.
+
+**What changed.** All eight intentionally-edited files were reverted to `HEAD` with
+`git checkout` and redone from a clean baseline, this time without invoking
+`npm run format` at all — `tsc --noEmit` and `npm run build` both passing is the
+verification bar the plan's own §03 actually requires; `AGENTS.md`'s "Checks" section
+lists `build` as the thing that "must exit clean" and `format` as a separate, non-gating
+command. The stray `vite.config.ts` reformat was found on a final `git status` sweep of
+the whole tree (not just the edit list) and reverted the same way. `oxfmt` itself is
+untouched — the fix is procedural: don't run it blindly, and diff the *whole* tree, not
+just the files intentionally touched, before trusting a "clean" status.
+
+**The lesson.** A tool listed as a "check" is not the same claim as a tool that checks
+its own output — `oxfmt` reformats; it does not verify. And a revert scoped to "the
+files I meant to touch" is exactly one omission away from missing a file the *tool*
+touched without being asked to. The recovery has to be scoped to the tool's blast
+radius, not to the plan's edit list.
+
+---
+
 ## Open
 
 - ~~**`batch_v2` is 75/190 and resuming.**~~ **Closed — it finished, and this line was

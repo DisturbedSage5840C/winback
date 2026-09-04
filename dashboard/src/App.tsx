@@ -1,6 +1,7 @@
-import { NavLink, Route, HashRouter as Router, Routes } from 'react-router-dom'
+import { AnimatePresence, motion } from 'framer-motion'
+import { NavLink, Route, HashRouter as Router, Routes, useLocation } from 'react-router-dom'
 import { API_BASE, getHealth } from './lib/api'
-import { useAsync } from './lib/hooks'
+import { useAsync, usePrefersReducedMotion } from './lib/hooks'
 import { OverviewPage } from './pages/Overview'
 import { WorklistPage } from './pages/Worklist'
 import { InvoicePage } from './pages/Invoice'
@@ -21,6 +22,8 @@ function Shell({ children }: { children: React.ReactNode }) {
   const health = useAsync(getHealth, [])
   const up = health.data?.status === 'ok'
   const db = health.data?.database
+  const location = useLocation()
+  const reduced = usePrefersReducedMotion()
   return (
     <div className="min-h-full">
       <header className="sticky top-0 z-30 border-b border-slate-300 bg-surface/85 backdrop-blur">
@@ -68,7 +71,19 @@ function Shell({ children }: { children: React.ReactNode }) {
           </span>
         </div>
       </header>
-      <main className="mx-auto max-w-[1180px] px-6 py-8">{children}</main>
+      <main className="mx-auto max-w-[1180px] px-6 py-8">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={location.pathname}
+            initial={reduced ? false : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduced ? undefined : { opacity: 0 }}
+            transition={{ duration: reduced ? 0 : 0.15 }}
+          >
+            {children}
+          </motion.div>
+        </AnimatePresence>
+      </main>
       <footer className="mx-auto max-w-[1180px] px-6 pb-10 pt-4 text-xs text-slate-600">
         Winback · Razorpay AI Buildathon Track 03 · every number traces to an API response — no mocks.
       </footer>

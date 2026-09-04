@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { getInvoiceCompliance, getLiveWorklist, getRunWorklist, getRuns } from '../lib/api'
 import { count } from '../lib/format'
 import { useAsync, usePrefersReducedMotion } from '../lib/hooks'
-import { EmptyState, ErrorState, Panel, SectionHeader, Spinner } from '../components/ui'
+import { CopyableId, EmptyState, ErrorState, PanelSkeleton, SectionHeader, Skeleton } from '../components/ui'
 import { RunSelector } from '../components/RunSelector'
 import { WorklistTable } from '../components/WorklistTable'
 import { CompliancePanel } from '../components/CompliancePanel'
@@ -83,7 +83,7 @@ export function WorklistPage() {
         </div>
       )}
 
-      {page.loading && <Spinner label="Loading worklist" />}
+      {page.loading && <WorklistSkeleton />}
       {page.error != null && <ErrorState error={page.error} onRetry={page.reload} />}
 
       {page.data && (
@@ -116,6 +116,27 @@ export function WorklistPage() {
           navigate(`/invoices/${id}${runId ? `?run_id=${runId}` : ''}`)
         }}
       />
+    </div>
+  )
+}
+
+// Shaped like WorklistTable's own rows rather than a bare spinner.
+function WorklistSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-300 bg-surface">
+      <div className="border-b border-slate-300 px-4 py-3">
+        <Skeleton className="h-3 w-64" />
+      </div>
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-6 border-b border-slate-300 px-4 py-3 last:border-0">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-4 w-16" />
+          <Skeleton className="h-4 w-14" />
+          <Skeleton className="h-4 w-14" />
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="ml-auto h-4 w-10" />
+        </div>
+      ))}
     </div>
   )
 }
@@ -193,7 +214,7 @@ function QuickLookDrawer({
           >
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <div className="font-mono text-sm text-ink-deep">{row.invoice_id}</div>
+                <CopyableId value={row.invoice_id} className="text-sm text-ink-deep" />
                 <div className="text-xs text-slate-600">quick look</div>
               </div>
               <div className="flex gap-2">
@@ -208,7 +229,7 @@ function QuickLookDrawer({
                 </button>
               </div>
             </div>
-            {compliance.loading && <Spinner />}
+            {compliance.loading && <PanelSkeleton rows={4} />}
             {compliance.error != null && <ErrorState error={compliance.error} />}
             {compliance.data && <CompliancePanel data={compliance.data} />}
           </motion.aside>

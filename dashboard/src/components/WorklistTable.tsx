@@ -1,6 +1,6 @@
 import type { WorklistRow } from '../lib/types'
 import { rupees } from '../lib/format'
-import { AttemptsBar, RootCauseChip, StatusChip } from './ui'
+import { AttemptsBar, CopyableId, RootCauseChip, StatusChip } from './ui'
 
 // §03.2 — columns in fixed order, sourced from exception_worklist. Table is
 // pre-sorted by the API; never re-sort client-side. `runMode` adds the
@@ -42,7 +42,9 @@ export function WorklistTable({
               onClick={() => onRowClick(r)}
               className="cursor-pointer border-b border-slate-300 last:border-0 transition-colors hover:bg-brand-wash/60"
             >
-              <td className="px-4 py-3 font-mono text-xs text-ink">{r.invoice_id}</td>
+              <td className="px-4 py-3 text-xs">
+                <CopyableId value={r.invoice_id} className="text-xs" />
+              </td>
               <td className="px-4 py-3 text-right tabular-nums font-semibold text-ink">{rupees(r.amount_paise)}</td>
               <td className="px-4 py-3 text-slate-900">{r.method}</td>
               <td className="px-4 py-3 text-slate-900">{r.bank}</td>

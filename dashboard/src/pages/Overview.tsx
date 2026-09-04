@@ -2,7 +2,7 @@ import { useSearchParams } from 'react-router-dom'
 import { getConfig, getOverview, getRuns } from '../lib/api'
 import { count, pct, rupees } from '../lib/format'
 import { useAsync, useCountUp, usePrefersReducedMotion } from '../lib/hooks'
-import { EmptyState, ErrorState, Panel, SectionHeader, Spinner } from '../components/ui'
+import { EmptyState, ErrorState, Panel, PanelSkeleton, SectionHeader, Skeleton } from '../components/ui'
 import { RunSelector } from '../components/RunSelector'
 import { Funnel } from '../components/Funnel'
 import { LiveTrace } from '../components/LiveTrace'
@@ -20,7 +20,7 @@ export function OverviewPage() {
   // render fires `GET /runs/null/overview`, a wasted 404 before the real run_id lands.
   const overview = useAsync(() => (selected ? getOverview(selected) : Promise.resolve(null)), [selected])
 
-  if (runs.loading) return <Spinner label="Loading runs" />
+  if (runs.loading) return <OverviewSkeleton />
   if (runs.error) return <ErrorState error={runs.error} onRetry={runs.reload} />
   if (!runs.data || runs.data.length === 0)
     return <EmptyState title="No runs yet." hint="Run a batch (agent.orchestrator) and it appears here — no example rows." />
@@ -29,7 +29,7 @@ export function OverviewPage() {
     <div className="space-y-10">
       <RunSelector runs={runs.data} selected={selected} onSelect={(id) => setParams(id ? { run_id: id } : {})} />
 
-      {overview.loading && <Spinner label="Loading overview" />}
+      {overview.loading && <OverviewSkeleton />}
       {overview.error != null && <ErrorState error={overview.error} onRetry={overview.reload} />}
 
       {overview.data && (
@@ -88,6 +88,21 @@ export function OverviewPage() {
           )}
         </>
       )}
+    </div>
+  )
+}
+
+// Headline-shaped + funnel-shaped, matching what's about to render underneath
+// it rather than a bare spinner.
+function OverviewSkeleton() {
+  return (
+    <div className="space-y-10">
+      <div>
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="mt-3 h-14 w-72" />
+        <Skeleton className="mt-3 h-4 w-96" />
+      </div>
+      <PanelSkeleton rows={5} />
     </div>
   )
 }

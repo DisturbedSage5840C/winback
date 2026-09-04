@@ -3,7 +3,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { getEvaluation } from '../lib/api'
 import { count, rupees, rupeesSigned, signedCount } from '../lib/format'
 import { useAsync } from '../lib/hooks'
-import { ErrorState, Panel, SectionHeader, Spinner } from '../components/ui'
+import { ErrorState, Panel, PanelSkeleton, SectionHeader, Skeleton } from '../components/ui'
 import type { ArmResult, IntervalRow, ViolationRow } from '../lib/types'
 
 // Status-palette hues for stacked stop_reasons stay in the reserved family;
@@ -16,7 +16,7 @@ const STOP_COLORS: Record<string, string> = {
 export function EvaluationPage() {
   const evaluation = useAsync(() => getEvaluation(), [])
 
-  if (evaluation.loading) return <Spinner label="Loading evaluation" />
+  if (evaluation.loading) return <EvaluationSkeleton />
   if (evaluation.error) return <ErrorState error={evaluation.error} onRetry={evaluation.reload} />
   const e = evaluation.data!
 
@@ -75,6 +75,24 @@ export function EvaluationPage() {
           the legacy policy never sampled. Naming this gap is the point — a headline AUC would have hidden it.
         </p>
       </div>
+    </div>
+  )
+}
+
+// CI-card-shaped + table-shaped, matching the two heaviest panels below it.
+function EvaluationSkeleton() {
+  return (
+    <div className="space-y-10">
+      <div>
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="mt-2 h-6 w-96" />
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Skeleton className="h-28 w-full rounded-xl" />
+        <Skeleton className="h-28 w-full rounded-xl" />
+      </div>
+      <PanelSkeleton rows={5} />
+      <PanelSkeleton rows={4} />
     </div>
   )
 }

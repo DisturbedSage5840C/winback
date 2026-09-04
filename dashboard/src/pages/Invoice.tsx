@@ -2,7 +2,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { getInvoice, getInvoiceCompliance, HttpError } from '../lib/api'
 import { rupees } from '../lib/format'
 import { useAsync } from '../lib/hooks'
-import { EmptyState, ErrorState, Panel, SectionHeader, Spinner, StatusChip, RootCauseChip, VerdictChip } from '../components/ui'
+import { CopyableId, EmptyState, ErrorState, Panel, PanelSkeleton, SectionHeader, Skeleton, StatusChip, RootCauseChip, VerdictChip } from '../components/ui'
 import { CompliancePanel } from '../components/CompliancePanel'
 import type { Attempt, AuditRow, Candidate, Decision } from '../lib/types'
 
@@ -14,7 +14,7 @@ export function InvoicePage() {
   const invoice = useAsync(() => getInvoice(id, runId), [id, runId])
   const compliance = useAsync(() => getInvoiceCompliance(id), [id])
 
-  if (invoice.loading) return <Spinner label={`Loading ${id}`} />
+  if (invoice.loading) return <InvoiceSkeleton />
   if (invoice.error) {
     if (invoice.error instanceof HttpError && invoice.error.status === 404)
       return (
@@ -35,7 +35,9 @@ export function InvoicePage() {
       <div>
         <div className="flex flex-wrap items-baseline gap-3">
           <span className="font-medium tabular-nums text-slate-600">01 —</span>
-          <h1 className="font-mono text-2xl font-bold text-ink-deep">{header.invoice_id}</h1>
+          <h1 className="text-2xl font-bold text-ink-deep">
+            <CopyableId value={header.invoice_id} className="text-2xl font-bold" />
+          </h1>
           <span className="tnum text-2xl font-black text-ink-deep">{rupees(header.amount_paise)}</span>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
@@ -51,7 +53,7 @@ export function InvoicePage() {
       {/* 02 — Compliance panel (primary content) */}
       <div>
         <SectionHeader index="02" title="Compliance decision" caption="Rendered verbatim from the guardrail — nothing recomputed client-side." />
-        {compliance.loading && <Spinner />}
+        {compliance.loading && <PanelSkeleton rows={4} />}
         {compliance.error != null && <ErrorState error={compliance.error} onRetry={compliance.reload} />}
         {compliance.data && <CompliancePanel data={compliance.data} />}
       </div>
@@ -86,6 +88,21 @@ export function InvoicePage() {
         <SectionHeader index="05" title="Audit trail" caption="Append-only. Real Razorpay entity IDs appear as monospace chips when a live action ran." />
         <AuditTrail rows={inv.audit_trail} />
       </Panel>
+    </div>
+  )
+}
+
+// Header-shaped + two panel-shaped blocks, matching what's about to render.
+function InvoiceSkeleton() {
+  return (
+    <div className="space-y-10">
+      <Skeleton className="h-4 w-32" />
+      <div>
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="mt-3 h-4 w-80" />
+      </div>
+      <PanelSkeleton rows={4} />
+      <PanelSkeleton rows={3} />
     </div>
   )
 }
@@ -227,8 +244,8 @@ function AuditTrail({ rows }: { rows: AuditRow[] }) {
             {r.execution_mode}
           </span>
           {r.razorpay_entity_id && (
-            <span className="rounded border border-slate-300 px-1.5 py-0.5 font-mono text-[11px] text-brand-dim">
-              {r.razorpay_entity_id}
+            <span className="rounded border border-slate-300 px-1.5 py-0.5 text-brand-dim">
+              <CopyableId value={r.razorpay_entity_id} className="text-[11px] text-brand-dim" />
             </span>
           )}
           {r.stop_reason && (

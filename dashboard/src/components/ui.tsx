@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { Outcome, RootCauseClass, Verdict } from '../lib/types'
 
 // ── Numbered editorial section header (§02 structural motif) ──────────────
@@ -152,6 +152,27 @@ export function Spinner({ label = 'Loading' }: { label?: string }) {
   )
 }
 
+// Shaped like the panel underneath rather than a bare spinner, so a loading
+// page reads as "this is a built product, mid-fetch" rather than "wait".
+// LiveTrace keeps Spinner — its own inline "waiting for the first decision"
+// state already does this job for a polling stream.
+export function Skeleton({ className = '' }: { className?: string }) {
+  return <div className={`animate-pulse rounded-md bg-slate-100 ${className}`} />
+}
+
+export function PanelSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <Panel className="p-6">
+      <Skeleton className="mb-4 h-4 w-40" />
+      <div className="space-y-3">
+        {Array.from({ length: rows }).map((_, i) => (
+          <Skeleton key={i} className="h-4 w-full" />
+        ))}
+      </div>
+    </Panel>
+  )
+}
+
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   const msg = error instanceof Error ? error.message : String(error)
   return (
@@ -181,5 +202,28 @@ export function EmptyState({ title, hint }: { title: string; hint?: string }) {
       <p className="text-sm font-medium text-ink">{title}</p>
       {hint && <p className="mt-1 text-sm text-slate-600">{hint}</p>}
     </div>
+  )
+}
+
+// ── Copy-to-clipboard id (invoice_id / run_id / plink_… etc.) ─────────────
+// Stops propagation so it's safe to drop into a row that also has its own
+// onClick (WorklistTable) — copying an id shouldn't also open the row.
+export function CopyableId({ value, className = '' }: { value: string; className?: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        void navigator.clipboard.writeText(value)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1200)
+      }}
+      title="Click to copy"
+      className={`font-mono text-ink transition-colors hover:text-brand-dim ${className}`}
+    >
+      {value}
+      {copied && <span className="ml-1 text-good">✓</span>}
+    </button>
   )
 }

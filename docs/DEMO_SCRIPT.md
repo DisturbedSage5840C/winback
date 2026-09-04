@@ -1,119 +1,107 @@
-# Demo script — 5:00
+# Demo script — plain version
 
-> **Status: firm.** Every id, string and number below was read out of the running
-> system on 3–4 Sep and is reproducible from a fresh clone via `scripts/run_demo.sh`.
-> Nothing on screen is invented, and §"What is deliberately *not* in this video"
-> exists because one beat in the original outline turned out to have no data behind it.
+> Every number below is real, pulled from the actual running system — nothing is
+> made up for the video. Keep the tone conversational, like explaining the project
+> to a friend, not pitching a panel.
 
-## The shot list
+## The shape of the video
 
-| Time | Beat | On screen | What to have open |
-|---|---|---|---|
-| 0:00–0:30 | **The problem, quantified.** "UPI Autopay fails on 8–15% of debits versus 2–3% for card mandates. Since August 2025, NPCI caps you at one attempt plus three retries, non-peak only. You cannot brute-force this back." | The failure-rate and retry-cap numbers, nothing else | `docs/COMPLIANCE.md` §01 |
-| 0:30–1:00 | **The loop in one sentence.** Compliance generates the legal option set, the model ranks it, the gate executes it, the ledger records it. | Architecture diagram — 10 seconds, no more | `docs/ARCHITECTURE.md` |
-| 1:00–2:20 | **The batch, on real rows.** Overview → worklist → drill-down. 190 invoices, ₹3,57,468 recovered, 65 deferred, 22 blocked, 17 failed. Open one drill-down and show the **scored candidate set** — every action×slot the guardrail allowed, priced, with the winner marked. | Overview funnel filling; worklist; the drawer | dashboard on run `batch_v2` |
-| 2:20–2:45 | **The live lane is genuinely live.** Same code path, different adapter. Show `plink_…` ids in the audit rows and open one `short_url` in a browser tab. | Worklist filtered to run `live_v2`; a real Razorpay payment link | run `live_v2` |
-| 2:45–3:30 | **The refusal.** Compliance page → paste `inv_3890_01` → Evaluate. Four of the five rules approve. The root-cause rule says in words *"TD may be retried"*. The answer is still **DENY**. | The red chip, `stop_reason · npci_1_plus_3_cap_exhausted`, and the expanded five-rule list held long enough to read | `/compliance` |
-| 3:30–3:50 | **The drill.** `scripts/failure_drill.sh` — the local MCP is killed mid-batch and the cohort still finishes with a complete audit trail. Say plainly what the drill found the *first* time it was run. | Terminal, two green phases | `docs/WHAT_BROKE.md`, 3 Sep |
-| 3:50–4:35 | **Rigour.** Reliability diagram, ECE, the rupee-priced confusion matrix, the four-arm table. Name the simulator limitation here, unprompted, and the observed-vs-censored gap right after it. | Evaluation page | `docs/EVALUATION.md` |
-| 4:35–5:00 | **Close.** This is Razorpay's own listed direction — "mandate retry sequencer" — built independently on the public MCP server and the Claude Agent SDK, in ten days. | Repo, one-command demo | `README.md` |
+1. Say what the project is and why it exists (30–45 sec)
+2. Show the GitHub repo, briefly (20–30 sec)
+3. Show the website actually working (2–3 min)
+4. Close (15 sec)
 
-## The 2:45 beat, exactly
+Total: roughly 4 minutes. No need to time it to the second — just keep it moving.
 
-This is the best forty-five seconds in the video, so it is written out rather than
-summarised. Type `inv_3890_01` into the compliance lookup and leave the moment blank.
-What comes back, verbatim from the API on 3 Sep:
+## 1. Intro — what is this and why
 
-```text
-NPCI retry cap    DENY     attempt 5 refused, budget of 4 exhausted for this invoice
-AFA ceiling       APPROVE  ₹24,846 within the ₹1,00,000 ceiling for mutual_fund_sip
-Pre-debit notice  APPROVE  notice sent 39.1h before the debit
-Non-peak window   APPROVE  outside peak hours
-Root cause        APPROVE  TD may be retried
+Say something like:
 
-Retry  DENY    stop_reason · npci_1_plus_3_cap_exhausted
-```
+> "This is Winback. When a UPI Autopay payment fails, most businesses either give up
+> or just retry it blindly and hope. The problem is you're not actually allowed to
+> retry however you want — there's a hard rule from NPCI: one attempt plus three
+> retries, and only during certain hours. Winback figures out, for every failed
+> payment, whether a retry is even legal, and if it is, when the best time to try
+> again is. It recovered about ₹3.57 lakh across 190 test invoices, without breaking
+> a single rule."
 
-The line to say over it: **"The amount is fine. The timing is fine. The notice went out.
-The failure is a technical decline, and the rule that classifies it says out loud that
-it may be retried. Four of five rules approve, and the answer is still no — because the
-budget is spent. That verdict is a pure function; there is no model in it, and there is
-no prompt in it. Using an LLM to decide a legal retry cap would be a bug."**
+Keep this short. No architecture diagram needed unless it helps you explain it —
+if you want one, a single sentence over it is enough: "Compliance checks the rules
+first, then the model picks the best legal option, and everything gets logged."
 
-Then expand "Show 5 rule verdicts" and leave it on screen for a beat. That list is the
-whole compliance argument in one screenshot.
+## 2. The GitHub repo
 
-Three things make this beat honest and worth defending:
+Open the repo in a browser. Just enough to show it's real, organized, and yours:
 
-- Nothing was staged. `inv_3890_01` is one of **354 invoices** in the live worklist
-  that have used all four attempts. Any of them shows the same refusal.
-- The panel is not a second implementation. `api/main.py` imports `compliance/` and
-  calls the same functions `agent/gate.py` calls; the string on the chip is the same
-  string that goes into `decisions.authorizing_rule`.
-- It is computed at the moment you ask. The "as of" control beside the invoice box
-  supplies the clock, so the same invoice can be asked about at the moment it was
-  actually live — which is how a frozen dataset stays answerable without anyone
-  editing a row.
+- Scroll the README for a few seconds
+- Point out the folder structure briefly (backend, dashboard, tests) — no need to
+  open individual files
+- Mention there's a full test suite and it's all documented
 
-## What is deliberately *not* in this video
+Say something like:
 
-**There is no red DENY in the streaming agent trace, and I will not fake one.**
+> "Here's the code — it's all open on GitHub. Backend, the compliance rules, the
+> model, and the dashboard you're about to see, all in one repo, with tests for
+> the important parts."
 
-All 428 rows in `decisions` carry `guardrail_verdict = APPROVE`. That is not the gate
-failing to fire — it is the architecture working as designed. The compliance layer
-*generates* the legal option set before the model ranks it, so by the time the agent
-proposes an action, an illegal one is not on the menu. The gate is still there, it is
-still the hard block, and `agent/tests/test_gate.py` proves it denies; it simply never
-had to during the batch.
+Don't linger. This section exists so people believe the demo is real, not to
+explain the code.
 
-That is a better story than a red flash, and it is the one to tell:
+## 3. The website, working
 
-> "The guardrail said no zero times in this batch. Not because it is weak — because it
-> runs *first*. It hands the model a menu of legal actions and the model picks from that
-> menu. The gate underneath is the thing that would catch a model that tried to order
-> off-menu, and there is a test that proves it does. What you just saw on the compliance
-> page is that same function, asked directly."
+Open the dashboard. Confirm the health badge is green before you start recording.
 
-Similarly not claimed on camera:
+**Overview page**
+Show the summary numbers — recovered amount, how many were deferred, how many
+were blocked, how many failed. Say what they mean in plain words:
 
-- **A mid-run MCP demotion row.** Phase 2 of the drill kills the transport and the batch
-  finishes, which is the property that matters. It does not always write an
-  `mcp_degraded` row, because the SDK does not surface a dead stdio mount unless a call
-  is in flight. The script says so in its own output and `WHAT_BROKE.md` says why.
-- **A real mandate retry.** `/v1/payments/create/*` is not routed without S2S Recurring
-  activation. Presentments are simulated, and `audit_log.execution_mode` says so on
-  every row. Say this in the 2:20 beat rather than letting someone find it.
+> "This is one full batch of 190 failed payments. About ₹3.57 lakh got recovered
+> legally. Some were deferred because it wasn't the right time yet, some were
+> blocked because retrying them would've broken the rules."
 
-## The rigour beat, with the numbers already picked
+**Worklist → drill into one invoice**
+Click into a single invoice. Show the options it considered and which one it
+picked.
 
-| Claim | Number | Source |
-|---|---|---|
-| Naive baseline vs Winback, on money | ₹6,39,598 vs ₹6,39,626 — paired interval [−₹2,697, ₹2,781], **contains zero** | `EVALUATION.md` §04 |
-| Naive baseline vs Winback, on legality | 66 violations vs **0** — interval [−96, −42], excludes zero | same |
-| ₹ per legal attempt | ₹3,045.70 (B) vs **₹3,246.83** (D) | same |
-| Legacy policy | ₹5,57,737 recovered, of which only **₹53,490 legally** | same |
-| Calibration, where there is data | ECE **0.034** (observed slice, n=2400) | `ml/artifacts/metrics_v1.json` |
-| Calibration, where there is none | ECE **0.442** (censored slice, n=85) | same |
-| Cost matrix, in rupees | net ₹19,71,345 margin; 52 attempts declined on cost | same |
+> "For every failed payment, the system looks at every legal way it could retry —
+> which day, which time window — prices each option, and picks the best one."
 
-**Say the limitation before the reliability diagram, not after:** *"D beats B and C inside
-this simulator, and the simulator is a model, not the world. The strongest evidence that
-I did not tune my way to this is the last row of that table: where the legacy policy
-never collected labels, my calibration error is thirteen times worse, and I am showing
-you that rather than the slice that flatters me."*
+**The compliance check**
+Go to the compliance page, type in an invoice id that hits the retry limit
+(`inv_3890_01`), and show the result.
 
-## Non-negotiables
+> "This one already used all its legal retries. Everything else about it looks
+> fine — the amount's fine, the timing's fine, notice went out — but the answer is
+> still no, because it's already used its budget. That's not the AI being
+> cautious, that's just the rule. A computer program decides this, not a
+> guess — there's no room for the model to talk its way around a legal limit."
 
-- The red DENY chip on screen long enough to read, with the four APPROVEs beside it.
-  The contrast is the point; a lone red chip proves nothing.
-- Say out loud: *"using an LLM to decide a legal retry cap would be a bug."*
-- State the simulator limitation before anyone asks.
-- Say that the guardrail denied nothing during the batch, and why.
-- No mocked data anywhere on screen.
+**Evaluation page**
+Briefly show the comparison between "just retry blindly" and Winback's approach.
 
-## Practicalities
+> "We compared this against just retrying everything with no rules. The blind
+> approach actually broke the rules 66 times. Winback recovered basically the same
+> amount of money — but with zero violations."
 
-`ffmpeg` is not installed on this machine. Record with QuickTime / macOS screen
-capture. Bring the API up with `scripts/run_demo.sh` and confirm the health badge in the
-dashboard header is green before recording — a red badge on camera costs more than a
-retake. Record the rough cut as insurance before the final take, not after.
+You can mention, briefly and honestly, that the results come from a simulated
+environment built to mirror real payment behavior, not live production traffic —
+one sentence, no need to dwell on it.
+
+## 4. Close
+
+> "That's Winback — a system that finds the legal way to retry a failed payment,
+> and never the illegal one. Built in [X] days, code's on GitHub, and the
+> dashboard you just saw is live."
+
+Show the repo URL or the live site URL one more time on screen and end there.
+
+## A few things to keep in mind while recording
+
+- Bring the API up first and check the dashboard's health badge is green —
+  recording with a red badge means a retake.
+- Don't read numbers off a script word-for-word — say them the way you'd explain
+  them to someone, it'll sound more natural.
+- If something on screen looks broken or empty, pause and fix it before
+  continuing rather than talking over it.
+- Record a rough draft first as a safety net before doing the take you'll
+  actually submit.

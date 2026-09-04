@@ -17,15 +17,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 # is the same "read-only is a grant, not a convention" argument api/main.py already
 # makes about the DB role, applied to the container too.
 #
-# agent/ is copied because api/main.py imports agent.explain for GET
-# /invoices/{id}/explain — a zero-tool, read-only narration call, not the batch runner
-# (agent/orchestrator.py still never ships in this image). ANTHROPIC_API_KEY stays
-# unset on this service regardless (see Ground rules), so that one endpoint fails
-# closed with a 502 in production rather than spending Claude budget on public
-# traffic — every other endpoint is unaffected.
+# agent/__init__.py + agent/explain.py only — api/main.py imports exactly agent.explain,
+# for GET /invoices/{id}/explain, a zero-tool, read-only narration call. Copying the
+# whole agent/ package would also ship orchestrator.py, tools.py, gate.py, hooks.py,
+# mcp_config.py, and adapters/live_razorpay.py into a public container — unreachable
+# from this image's one entrypoint (uvicorn api.main:app), but still a direct violation
+# of "don't deploy the agent or the batch runner." ANTHROPIC_API_KEY stays unset on this
+# service regardless (see Ground rules), so /invoices/{id}/explain fails closed with a
+# 502 in production rather than spending Claude budget on public traffic — every other
+# endpoint is unaffected.
 COPY core/ core/
 COPY compliance/ compliance/
-COPY agent/ agent/
+COPY agent/__init__.py agent/explain.py agent/
 COPY api/ api/
 COPY ml/artifacts/ ml/artifacts/
 

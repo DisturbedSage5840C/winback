@@ -114,9 +114,9 @@ rather than failing three minutes in. Seed, training, evaluation, the API and th
 dashboard all run without one.
 
 The dashboard installs with **`npm install`** — that is the tested path. A
-`pnpm-lock.yaml` is committed too, but pnpm is not installed on the build machine and
-that route is unverified; if you have a preference, npm is the one with evidence
-behind it.
+`pnpm-lock.yaml` exists in `dashboard/` but is no longer tracked (2026-09-04 cleanup —
+pnpm is not installed on the build machine and that route was unverified); if you have
+a preference, npm is the one with evidence behind it.
 
 **This was checked, not assumed — and it failed the first time.** On 4 September this
 repository was cloned from GitHub into an empty directory on a machine with no Winback

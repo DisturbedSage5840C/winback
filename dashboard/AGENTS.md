@@ -5,9 +5,13 @@ every number it shows is fetched from the FastAPI service in `../api`, and nothi
 here is mocked. If a value cannot be fetched, the component says so rather than
 substituting a plausible one.
 
-Scaffolded from a Figma Make export and then rewritten. The `.figma/make/` scripts and
-`site.json` are still load-bearing — `vite.config.ts` imports `site.json` for the
-document shell and mounts four Figma Vite plugins — so do not delete that directory.
+Scaffolded from a Figma Make export and then rewritten. Of `.figma/make/`, only
+`site.json` is load-bearing — `vite.config.ts` imports it for the document shell and
+mounts four Figma Vite plugins — so do not delete or gitignore that file. The other
+eight entries in that directory are Figma's own hosting-CLI wrappers (`deploy`,
+`analyze-routes`, `langserver`, …); nothing in this project's build reads them, so as of
+2026-09-04 they're gitignored rather than tracked — present on disk, not on GitHub. See
+`docs/WHAT_BROKE.md`.
 
 ## Development server
 
@@ -15,9 +19,10 @@ Vite serves on `$PORT` (default 8443). `../scripts/run_demo.sh` starts it alongs
 API on `:8000`; `npm run dev` starts it alone, which is only useful against an API that
 is already up.
 
-Install with **`npm install`** — that is the tested path. `pnpm-lock.yaml` is committed
-and `.mise.toml` pins pnpm 10.34.3, but pnpm is not installed on the build machine and
-that route is unverified.
+Install with **`npm install`** — that is the tested path. `.mise.toml` pins pnpm
+10.34.3 for anyone using a version manager, but pnpm is not installed on the build
+machine and that route is unverified; `pnpm-lock.yaml` still exists on disk but is no
+longer tracked (2026-09-04 — nothing in the build reads it).
 
 ## Project structure
 

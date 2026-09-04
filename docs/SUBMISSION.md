@@ -89,7 +89,7 @@ presented a mandate twice, and NPCI counts presentments.
 **Build:** 612 tests passing · 99% coverage on `compliance/` · dataset frozen at
 `c32b2b063cd87707` (4,000 mandates, 30,210 invoices, 33,866 attempts) · test ECE **0.034**
 where the merchant had data, **0.442** where it did not, still correctly ranked there ·
-43 entries in [`WHAT_BROKE.md`](WHAT_BROKE.md).
+44 entries in [`WHAT_BROKE.md`](WHAT_BROKE.md).
 
 ## What to say about the limits, if there is room
 

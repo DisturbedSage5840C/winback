@@ -1481,15 +1481,62 @@ against the source before it was written, including the two I had got wrong on t
 pass (`hooks.ts` exports `useAsync`/`usePageVisible`/`usePrefersReducedMotion`/`useCountUp`,
 not a paging hook; `ui.tsx` exports named chips, not generic shells).
 
-`.figma/make/` stays. It is not residue: `vite.config.ts` imports `site.json` from it
-for the document shell and mounts four Figma Vite plugins. Deleting a directory because
-its name looks like leftovers is how you break a build on the last day.
+`.figma/make/` stays, as a directory, without checking each file in it — right, for a
+licence-audit day: deleting the whole thing because its name looks like leftovers is how
+you break a build on the last day. The per-file question sat open for nine more days.
+Closed below.
 
 **The lesson.** Identity metadata is the last thing to be checked because nothing
 executes it. The check that finally caught it was a question asked for an unrelated
 reason — what are all the licences in this tree — which is the second time in two days
 that running a tool for a *different* purpose found the defect that the purpose-built
 gates could not. Broad tools find things narrow tests were never pointed at.
+
+---
+
+## 2026-09-04 · One imported file defended eight that were never read
+
+**What happened.** A repo-wide cleanup pass re-opened the entry above and read it
+literally: "`.figma/make/` stays... `vite.config.ts` imports `site.json` from it." True
+of one file. Read the other eight — `analyze-routes`, `deploy`, `deploy-preview`,
+`dev`, `dev.json`, `format`, `install`, `langserver` — and each is a thin wrapper
+shelling out to Figma's own hosting CLI (`figma make deploy`, `figma-analyze`,
+`pnpm dlx @vtsls/language-server`) or documenting Figma's own dev-server file-watch
+config. None is imported by `vite.config.ts`, named in any `package.json` script, or
+read by `scripts/run_demo.sh`. `dashboard/.gitattributes` was the same shape: Git-LFS
+tracking rules for roughly eighty file extensions, in a repo that has never used LFS —
+confirmed by diffing the three committed PNG pairs byte-for-byte against plain blobs,
+not pointer files. So was `dashboard/pnpm-lock.yaml`: real and internally consistent,
+but the tested install path has been `npm install` since Day 7 (README §06,
+`AGENTS.md`), and its one remaining reader in the tree, `dev.json`'s `installOn`, was
+leaving with the other eight anyway.
+
+**Why it survived.** The Day-9 entry answered "is this directory residue," not "which
+files in it are," and a directory-level *no* reads as a blanket clearance. Nobody went
+back to ask the same question nine files at a time, and nothing forced the question:
+`npm run build`, `run_demo.sh`, and the fresh-clone bootstrap in README §06 all pass
+today without touching any of the eight, so their presence has never once failed a
+check.
+
+**What it would have cost.** Nothing functional — that's the point; unread files don't
+break builds, they just sit there. What they cost is legibility on a submission whose
+whole thesis is that every decision is auditable: a judge opening `dashboard/` and
+finding `deploy`, `langserver`, and `.gitattributes` has to either know what Figma
+Make's own CLI looks like or wonder what they're for. Neither is the impression a
+compliance-and-audit project wants to make of its own repository.
+
+**What changed.** `git rm --cached` on the eight `.figma/make/` scripts,
+`.gitattributes`, and `pnpm-lock.yaml` — untracked, not deleted; all ten files stay on
+disk, and `.figma/make/site.json` is untouched and still tracked. `dashboard/.gitignore`
+now lists them by name with the reasoning inline, so nobody re-adds one without reading
+why it left. `AGENTS.md`, this file's entry above, and `README.md` §06 corrected to
+name `site.json` specifically instead of the directory, and to say `pnpm-lock.yaml` is
+present but no longer committed rather than "committed too."
+
+**The lesson.** "The directory is fine" and "every file in the directory is fine" are
+different claims, and the first one only ever proved itself. A defense written at the
+grain of one file should stay scoped to that file — restate it there, don't let it
+stand in for its neighbours nine days running.
 
 ---
 

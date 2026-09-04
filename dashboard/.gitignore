@@ -18,3 +18,23 @@ logs/
 # beside it.
 /.plugins/
 /.opencode-skills/
+
+# Figma Make's own hosting-CLI wrappers and Git-LFS boilerplate: traced each
+# one to its caller (2026-09-04, see docs/WHAT_BROKE.md) and none is read by
+# this project's build, `run_demo.sh`, or `package.json` — only `site.json`
+# is. Kept on disk, not tracked, so a fresh clone doesn't need them and a
+# judge browsing the tree isn't left to guess what they're for.
+/.gitattributes
+/.figma/make/analyze-routes
+/.figma/make/deploy
+/.figma/make/deploy-preview
+/.figma/make/dev
+/.figma/make/dev.json
+/.figma/make/format
+/.figma/make/install
+/.figma/make/langserver
+
+# pnpm-lock.yaml: a real, self-consistent lockfile, but npm is the tested
+# install path (AGENTS.md, README §06) and nothing left in the tracked tree
+# points at pnpm once dev.json — its only reader — is gone.
+/pnpm-lock.yaml

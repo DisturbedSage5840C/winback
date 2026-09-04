@@ -1495,14 +1495,22 @@ gates could not. Broad tools find things narrow tests were never pointed at.
 
 ## Open
 
-- **`batch_v2` is 75/190 and resuming.** The re-run that exercises full audit coverage has
-  now halted twice on the Claude account's own session limit, not on anything in this
-  repo — first at `inv_1448_01` (`resets 7pm`), then at `inv_1957_01` (`resets 12:20am`).
-  Both times the halt path behaved as designed: reason in the report line, the unattempted
-  invoices counted and named, resume command printed. The second halt is what surfaced the
-  resume-query defect above, so it paid for itself. The Day-6 gate itself is met by
-  `batch_v1` (190/190, unattended, exit 0). What `batch_v2` adds is coverage: 75 invoices,
-  75 audit rows, zero violations — against `batch_v1`'s 168 rows for 190 invoices, which
-  cannot be backfilled and is not going to be.
+- ~~**`batch_v2` is 75/190 and resuming.**~~ **Closed — it finished, and this line was
+  stale for a day.** Queried on 4 Sep while verifying the figures going onto the
+  application form: `batch_v2` holds **190 invoices, 190 audit rows, ₹3,57,468 recovered,
+  zero violations** — 86 recovered, 65 deferred, 22 blocked, 17 failed. It halted three
+  times on the Claude account's own session limit, never on anything in this repo (at
+  `inv_1448_01`, then `inv_1957_01`), and each time the halt path did what it was written
+  to do: reason in the report line, unattempted invoices counted and named, resume command
+  printed. The second halt is what surfaced the resume-query defect above, so it paid for
+  itself. It then resumed to completion and nobody came back to say so. **The stale line
+  is the finding.** An "Open" section is only worth having if closing things out of it is
+  as routine as adding them, and a report that overstates what is unfinished is wrong in
+  the same way as one that overstates what is done — it just fails in the flattering
+  direction, which is why it survived. The Day-6 gate was already met by `batch_v1`
+  (190/190, unattended, exit 0); what `batch_v2` adds is the audit coverage `batch_v1`
+  cannot have, its 168 rows for 190 invoices predating the three-write-path fix and not
+  being backfilled, because `audit_log` is append-only and a corrected run gets a new
+  `run_id`.
 - **S2S Recurring activation** — assumed unavailable. If it is granted, the live lane
   widens; the architecture does not change. Tracked in `docs/LIVE_LANE_FINDINGS.md`.

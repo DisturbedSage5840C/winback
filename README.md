@@ -195,6 +195,7 @@ Stated here rather than waiting to be asked.
 | [`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) | The failure log, written as it happened |
 | [`docs/FRONTEND_SPEC.md`](docs/FRONTEND_SPEC.md) | The dashboard contract — pages, endpoints, palette, motion budget |
 | [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) | The five-minute video, shot by shot, with what is deliberately not claimed |
+| [`docs/SUBMISSION.md`](docs/SUBMISSION.md) | The submission pack — every figure the form asks for, each sourced to a file here |
 | [`COMPLETION_REPORT.md`](COMPLETION_REPORT.md) | Live build status against the ten-day plan — what is done, what is left, and who owns it |
 
 ## 10 — License

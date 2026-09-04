@@ -1,0 +1,16 @@
+# Render Blueprint for the read-only Winback API — the Render equivalent of
+# railway.toml, kept alongside it rather than replacing it (see docs/*deployment-plan.md
+# §01: Render is a documented drop-in swap for Railway, same connection-string/env-var
+# shape). Builds the same Dockerfile.api; nothing provider-specific is added there.
+services:
+  - type: web
+    name: winback-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.api
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: WINBACK_DB_URL_READONLY
+        sync: false
+      - key: WINBACK_CORS_ORIGINS
+        sync: false

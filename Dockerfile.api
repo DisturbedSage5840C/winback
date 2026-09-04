@@ -1,0 +1,37 @@
+# Dockerfile.api — the read-only Winback API, built for Railway/Render/Fly.
+#
+# Installs the full pinned requirements.txt rather than a trimmed subset. api/main.py
+# only imports compliance/ and core/, neither of which touches xgboost or
+# claude-agent-sdk — but pinning against a second, hand-picked dependency list is a
+# second place to keep in sync, and on a same-day deploy "slightly bigger image" is a
+# much cheaper mistake than "ImportError three minutes into a Railway build."
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Only what the read-only service actually serves. The batch runner, sim, ml training,
+# and eval code are deliberately not copied in — this image can never run a batch, which
+# is the same "read-only is a grant, not a convention" argument api/main.py already
+# makes about the DB role, applied to the container too.
+#
+# agent/ is copied because api/main.py imports agent.explain for GET
+# /invoices/{id}/explain — a zero-tool, read-only narration call, not the batch runner
+# (agent/orchestrator.py still never ships in this image). ANTHROPIC_API_KEY stays
+# unset on this service regardless (see Ground rules), so that one endpoint fails
+# closed with a 502 in production rather than spending Claude budget on public
+# traffic — every other endpoint is unaffected.
+COPY core/ core/
+COPY compliance/ compliance/
+COPY agent/ agent/
+COPY api/ api/
+COPY ml/artifacts/ ml/artifacts/
+
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8000
+
+# Shell form so ${PORT} (set by Railway/Render at runtime) actually expands; exec form
+# would pass the literal string "${PORT}" to uvicorn and fail to bind.
+CMD uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}

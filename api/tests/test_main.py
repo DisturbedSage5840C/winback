@@ -121,6 +121,20 @@ def test_an_unknown_run_is_a_404_and_not_an_empty_funnel(client: TestClient):
     assert client.get("/runs/no_such_run/overview").status_code == 404
 
 
+def test_a_settled_runs_overview_is_cacheable_the_latest_one_is_not(client: TestClient):
+    """Only one run_id can still be receiving writes at any moment — the one behind the
+    newest row in the append-only log — so every other run is safe for a browser to hold
+    onto, and the newest one is not, because the batch behind it may still be running."""
+    runs = client.get("/runs").json()
+    if len(runs) < 2:
+        pytest.skip("need at least two runs to tell a settled one from the latest")
+
+    latest, *older = runs
+    assert "cache-control" not in client.get(f"/runs/{latest['run_id']}/overview").headers
+    body = client.get(f"/runs/{older[0]['run_id']}/overview")
+    assert body.headers["cache-control"] == "public, max-age=300"
+
+
 def test_the_worklist_carries_the_attempt_budget(client: TestClient, a_run: str):
     """``attempts_used`` comes from ``exception_worklist``, which excludes counterfactual
     rows. Counting those would tell the page a censored invoice had spent all four NPCI
@@ -153,6 +167,24 @@ def test_the_live_queue_holds_only_what_is_still_outstanding(client: TestClient)
         assert row["invoice_status"] == "at_risk"
 
 
+def test_the_live_queue_can_be_segmented_by_bank_method_or_root_cause(client: TestClient):
+    """Filters on columns ``exception_worklist`` already computes, not a new aggregation.
+    Whatever a caller passes for ``bank`` is bound as a parameter, so this also stands in
+    for "an unrecognised value returns zero rows rather than an error, or a crash"."""
+    unfiltered = client.get("/worklist", params={"limit": 500}).json()
+    assert unfiltered["rows"], "need at least one at-risk invoice for this to mean anything"
+
+    by_bank = next(r["bank"] for r in unfiltered["rows"] if r["bank"])
+    filtered = client.get("/worklist", params={"limit": 500, "bank": by_bank}).json()
+    assert filtered["rows"]
+    assert all(row["bank"] == by_bank for row in filtered["rows"])
+    assert filtered["total"] <= unfiltered["total"]
+
+    empty = client.get("/worklist", params={"bank": "not-a-real-bank"}).json()
+    assert empty["rows"] == []
+    assert empty["total"] == 0
+
+
 def test_the_worklist_is_ordered_by_rupees_at_risk(client: TestClient, a_run: str):
     body = client.get(f"/runs/{a_run}/worklist", params={"limit": 20}).json()
     amounts = [row["amount_paise"] for row in body["rows"]]
@@ -177,6 +209,15 @@ def test_the_drill_down_returns_the_losing_candidates_too(client: TestClient, a_
 
 def test_an_unknown_invoice_is_a_404(client: TestClient):
     assert client.get("/invoices/inv_9999_99").status_code == 404
+
+
+def test_an_invoice_with_no_decision_has_no_explanation(client: TestClient):
+    """The 404 has to come back before any model is called — an invoice with nothing
+    decided about it yet has nothing for the explainer to narrate, and this must be true
+    with no network access and no API key configured, which is exactly what a test
+    environment is."""
+    response = client.get("/invoices/inv_9999_99/explain")
+    assert response.status_code == 404
 
 
 def test_the_trace_cursors_on_the_id_and_never_replays_a_row(client: TestClient, a_run: str):
@@ -293,6 +334,32 @@ def test_the_panel_answers_as_of_a_supplied_moment(client: TestClient):
     # The window strip is arithmetic on that same moment, not on the server's clock —
     # otherwise the panel would narrate one instant while judging another.
     assert body.json()["window"]["now_utc"].startswith(moment[:16])
+
+
+def test_model_importances_are_read_from_the_training_artifact_sorted_by_gain(
+    client: TestClient,
+):
+    """Same file ``ml/train.py`` wrote at training time — this cannot disagree with the
+    model that scored the batch, because it never recomputes anything."""
+    body = client.get("/model/importances", params={"top": 5}).json()
+    shares = [f["gain_share"] for f in body["features"]]
+    assert len(shares) == 5
+    assert shares == sorted(shares, reverse=True)
+    assert sum(shares) <= 1.0
+
+
+def test_model_importances_caps_at_the_frozen_feature_count(client: TestClient):
+    assert client.get("/model/importances", params={"top": 100}).status_code == 422
+
+
+def test_frozen_artifact_responses_are_cacheable(client: TestClient, a_run: str):
+    """``/evaluation`` and ``/model/importances`` describe files on disk that change only
+    when a maintainer runs a command by hand, never as a side effect of a request — so a
+    browser is safe to hold onto the response for a while."""
+    for response in (client.get("/evaluation"), client.get("/model/importances")):
+        if response.status_code == 404:
+            continue
+        assert response.headers["cache-control"] == "public, max-age=300"
 
 
 def test_the_evaluation_comes_from_the_tables_that_generate_the_report(client: TestClient):

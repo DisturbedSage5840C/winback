@@ -20,14 +20,18 @@ is a rounding error waiting for a total.
 
 from __future__ import annotations
 
+import json
+import os
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from fastapi import FastAPI, HTTPException, Query
+from claude_agent_sdk import ClaudeSDKError
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from agent.explain import DecisionNotFound, explain_decision
 from compliance import (
     afa_threshold,
     consent_gate,
@@ -39,7 +43,7 @@ from compliance import (
 from compliance.guardrail import ActionKind, ActionRequest
 from compliance.result import RuleResult
 from compliance.root_cause import RootCause
-from core.config import get_settings
+from core.config import REPO_ROOT, get_settings
 from core.db import healthcheck, read_connection
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -50,9 +54,14 @@ app = FastAPI(
     summary="Read-only access to the recovery batch, its audit trail, and the evaluation.",
 )
 
-# The dashboard is served from a different origin in development. Credentials are never
-# sent — there is no auth on a read-only view of a test-mode dataset — so the permissive
-# origin list costs nothing and is scoped to local development anyway.
+# The dashboard is served from a different origin in both development and production.
+# Credentials are never sent — there is no auth on a read-only view of a test-mode
+# dataset — so the permissive origin list costs nothing. WINBACK_CORS_ORIGINS lets a
+# deployed dashboard's real origin (e.g. a Vercel URL) be added without another commit.
+_extra_origins = [
+    o.strip() for o in os.environ.get("WINBACK_CORS_ORIGINS", "").split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -60,6 +69,7 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:8443",
         "http://127.0.0.1:8443",
+        *_extra_origins,
     ],
     allow_methods=["GET"],
     allow_headers=["*"],
@@ -147,8 +157,23 @@ def runs() -> list[dict[str, Any]]:
     )
 
 
+def _is_latest_run(run_id: str) -> bool:
+    """Whether ``run_id`` is the one that wrote the most recent audit row.
+
+    The orchestrator runs one batch at a time, one invoice at a time, so at most one
+    run_id can still be receiving writes at any moment — and it is always the one behind
+    the newest row in the append-only log. Every other run_id is settled and can never
+    grow another row, which is the only fact ``/runs/{id}/overview`` needs to know
+    before it is safe to let a browser cache the response.
+    """
+    latest = _row(
+        "SELECT run_id FROM audit_log WHERE subject_type = 'invoice' ORDER BY ts_utc DESC LIMIT 1"
+    )
+    return latest is not None and latest["run_id"] == run_id
+
+
 @app.get("/runs/{run_id}/overview")
-def overview(run_id: str) -> dict[str, Any]:
+def overview(run_id: str, response: Response) -> dict[str, Any]:
     """The funnel, straight out of the ``recovery_funnel`` view.
 
     This is the page that carries the ₹-recovered headline, so it is the page most likely
@@ -172,6 +197,8 @@ def overview(run_id: str) -> dict[str, Any]:
         """,
         {"run": run_id},
     )
+    if not _is_latest_run(run_id):
+        response.headers["Cache-Control"] = "public, max-age=300"
     return row
 
 
@@ -277,23 +304,50 @@ def events(
 def live_worklist(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    bank: str | None = Query(None, description="Filter to a single issuing bank"),
+    method: str | None = Query(None, description="Filter to a single payment method"),
+    root_cause: str | None = Query(None, description="TD, BD_transient, or BD_hard"),
 ) -> dict[str, Any]:
     """The queue: invoices still at risk, nothing decided about them yet.
 
     The counterpart to the run worklist above. This one is the merchant's inbox — what
     is outstanding right now, ranked by rupees, with the NPCI budget each one has left —
     and it shrinks as the agent works, which is the behaviour that makes it a queue.
+
+    ``bank``, ``method``, and ``root_cause`` are filters on columns
+    ``exception_worklist`` already computes, not a new aggregation — the segmentation a
+    recovery dashboard is expected to offer, added without touching what the view means.
+    Every value is bound as a query parameter; nothing a caller sends becomes SQL.
     """
+    params = {
+        "limit": limit,
+        "offset": offset,
+        "bank": bank,
+        "method": method,
+        "root_cause": root_cause,
+    }
     rows = _rows(
         """
         SELECT * FROM exception_worklist
          WHERE invoice_status = 'at_risk'
+           AND (%(bank)s::text IS NULL OR bank = %(bank)s)
+           AND (%(method)s::text IS NULL OR method = %(method)s)
+           AND (%(root_cause)s::text IS NULL OR latest_root_cause = %(root_cause)s)
          ORDER BY amount_paise DESC
          LIMIT %(limit)s OFFSET %(offset)s
         """,
-        {"limit": limit, "offset": offset},
+        params,
     )
-    total = _row("SELECT count(*) AS n FROM exception_worklist WHERE invoice_status = 'at_risk'")
+    total = _row(
+        """
+        SELECT count(*) AS n FROM exception_worklist
+         WHERE invoice_status = 'at_risk'
+           AND (%(bank)s::text IS NULL OR bank = %(bank)s)
+           AND (%(method)s::text IS NULL OR method = %(method)s)
+           AND (%(root_cause)s::text IS NULL OR latest_root_cause = %(root_cause)s)
+        """,
+        params,
+    )
     return {"total": (total or {}).get("n", 0), "rows": rows}
 
 
@@ -362,6 +416,50 @@ def invoice(invoice_id: str, run_id: str | None = None) -> dict[str, Any]:
             """,
             params,
         ),
+    }
+
+
+#: Keyed by decision_id, which is immutable once written — a decision row is never
+#: updated, only superseded by a new one (see ``decisions.supersedes_decision_id``), so a
+#: cached paragraph for one can never go stale under it. Process-local and unbounded by
+#: design: at most one entry per decision this deployment's dashboard has actually been
+#: asked to explain, which is a small fraction of the invoices in any batch.
+_EXPLANATION_CACHE: dict[str, str] = {}
+
+
+@app.get("/invoices/{invoice_id}/explain")
+async def invoice_explanation(invoice_id: str, run_id: str | None = None) -> dict[str, Any]:
+    """One plain-English paragraph narrating the most recent decision for this invoice.
+
+    Generated on demand, the first time anyone asks, and cached after that — never
+    pre-computed for all invoices in a batch, which would spend the explainer's budget on
+    rows nobody looks at. The call underneath (:mod:`agent.explain`) has zero tools: it
+    cannot approve, deny, or spend anything, only narrate a row already written.
+    """
+    decided = _row(
+        """
+        SELECT decision_id FROM decisions
+         WHERE invoice_id = %(inv)s AND (%(run)s::text IS NULL OR run_id = %(run)s)
+         ORDER BY decided_at DESC LIMIT 1
+        """,
+        {"inv": invoice_id, "run": run_id},
+    )
+    if decided is None:
+        raise HTTPException(status_code=404, detail=f"no decision written yet for {invoice_id!r}")
+
+    decision_id = decided["decision_id"]
+    if decision_id not in _EXPLANATION_CACHE:
+        try:
+            _EXPLANATION_CACHE[decision_id] = await explain_decision(invoice_id, run_id)
+        except DecisionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ClaudeSDKError as exc:
+            raise HTTPException(status_code=502, detail="explainer unavailable") from exc
+
+    return {
+        "invoice_id": invoice_id,
+        "decision_id": decision_id,
+        "explanation": _EXPLANATION_CACHE[decision_id],
     }
 
 
@@ -543,8 +641,29 @@ def _verdict(
 # ------------------------------------------------------------------- evaluation
 
 
+@app.get("/model/importances")
+def model_importances(response: Response, top: int = Query(12, ge=1, le=27)) -> dict[str, Any]:
+    """Gain-based feature importances from the frozen model's own training artifact.
+
+    Read, never recomputed — ``ml/train.py`` wrote these at training time, into the same
+    file ``docs/EVALUATION.md`` is generated from, so this cannot disagree with the model
+    that scored the batch.
+    """
+    path = REPO_ROOT / "ml" / "artifacts" / "metrics_v1.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="no trained model artifact found")
+    metrics = json.loads(path.read_text())
+    ranked = sorted(metrics.get("importances", {}).items(), key=lambda kv: kv[1], reverse=True)
+    # The artifact on disk changes only when `python -m ml` is run by hand, never as a
+    # side effect of a request — so a stale response here is never staler than the file.
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return {
+        "features": [{"name": name, "gain_share": round(share, 4)} for name, share in ranked[:top]]
+    }
+
+
 @app.get("/evaluation")
-def evaluation(run_id: str | None = None) -> dict[str, Any]:
+def evaluation(response: Response, run_id: str | None = None) -> dict[str, Any]:
     """The four-arm result, read from the same tables ``docs/EVALUATION.md`` is generated
     from — so the page and the committed report cannot disagree without one of them being
     stale, and ``python -m eval.report --check`` catches that."""
@@ -553,6 +672,10 @@ def evaluation(run_id: str | None = None) -> dict[str, Any]:
     if run is None:
         raise HTTPException(status_code=404, detail="no evaluation run persisted")
 
+    # `eval_runs` is written only by `python -m eval.report`, a command nobody but the
+    # maintainer runs, and never as a side effect of a request — so this response cannot
+    # go stale between now and the next time that command runs.
+    response.headers["Cache-Control"] = "public, max-age=300"
     return {
         "run": _row("SELECT * FROM eval_runs WHERE run_id = %(run)s", {"run": run}),
         "arms": _rows(

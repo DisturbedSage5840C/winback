@@ -6,6 +6,18 @@ A compliance-gated recovery agent for failed subscription and UPI-Autopay debits
 Built for the **Razorpay AI Buildathon 2026, Track 03 — AI Revenue Recovery**, on the
 public Razorpay MCP server and the Claude Agent SDK.
 
+Eleven top-level folders, one job each, nothing shared between them by accident:
+
+| | |
+|---|---|
+| [`compliance/`](compliance) [`core/`](core) | The six pure-function rules, and the config/db/money primitives under them |
+| [`sim/`](sim) [`ml/`](ml) [`eval/`](eval) | The counterfactual oracle, the calibrated model, the four-arm evaluation |
+| [`agent/`](agent) [`api/`](api) | The Claude Agent SDK loop with its money gate, and the read-only FastAPI service in front of it |
+| [`dashboard/`](dashboard) | The React front end — reads the API, mocks nothing |
+| [`db/`](db) | Schema, append-only triggers, and grants — the audit trail as DDL, not convention |
+| [`scripts/`](scripts) | `run_demo.sh` (one command, fresh clone to running stack) and `failure_drill.sh` |
+| [`docs/`](docs) | Every doc this README links to, including the day-by-day build log |
+
 ---
 
 ## 01 — The problem, quantified
@@ -196,7 +208,7 @@ Stated here rather than waiting to be asked.
 | [`docs/FRONTEND_SPEC.md`](docs/FRONTEND_SPEC.md) | The dashboard contract — pages, endpoints, palette, motion budget |
 | [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) | The five-minute video, shot by shot, with what is deliberately not claimed |
 | [`docs/SUBMISSION.md`](docs/SUBMISSION.md) | The submission pack — every figure the form asks for, each sourced to a file here |
-| [`COMPLETION_REPORT.md`](COMPLETION_REPORT.md) | Live build status against the ten-day plan — what is done, what is left, and who owns it |
+| [`docs/COMPLETION_REPORT.md`](docs/COMPLETION_REPORT.md) | Live build status against the ten-day plan — what is done, what is left, and who owns it |
 
 ## 10 — License
 

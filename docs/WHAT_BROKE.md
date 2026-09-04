@@ -1469,7 +1469,7 @@ a licence audit — was not a thing anyone had run before today.
 **What it would have cost.** A judge opening `dashboard/package.json` on a submission
 that argues for provenance and honest measurement would have read the name of a
 different product. The Figma-Make origin is disclosed, and has been since Day 7
-(`COMPLETION_REPORT.md` §02 and §04 both name it) — so this was never concealment. It
+(`docs/COMPLETION_REPORT.md` §02 and §04 both name it) — so this was never concealment. It
 was worse in a smaller way: a repository that had not finished saying what it was.
 
 **What changed.** `dashboard/package.json` and `package-lock.json` renamed to

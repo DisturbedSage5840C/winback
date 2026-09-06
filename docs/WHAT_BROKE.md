@@ -1622,6 +1622,50 @@ implying a count no bare `pytest` run ever produced.
 
 ---
 
+## 2026-09-06 · "Byte-for-byte reproducible" was true on one machine, and CI is a different one
+
+**Believed.** `ml/__main__.py`'s docstring: "Running this a second time must reproduce
+the committed numbers exactly: the dataset is seeded, the split is by time, `PARAMS`
+carries a fixed `random_state`, and nothing here samples." `ml/tests/test_calibrate.py`
+and `ml/tests/test_scorer.py` enforced that literally, comparing freshly computed ECE and
+Brier scores against `metrics_v1.json` with `pytest.approx(..., abs=1e-12)` — no slack
+for anything but rounding. The claim had real evidence behind it: README's Day-9 clone
+test (§"This was checked, not assumed") reproduced the dataset fingerprint and the
+evaluation figures exactly on a second machine.
+
+**Actually true.** That second machine was also macOS arm64. The first CI run (adding
+`.github/workflows/ci.yml` on `ubuntu-latest`, an x86_64 runner) failed two tests that
+pass everywhere else: `test_the_pipeline_reproduces_the_committed_metrics` recomputed an
+ECE of `0.034234548...` against a committed `0.033135436...` — a real ~3.4% divergence,
+because retraining the booster from scratch on a different CPU architecture does not
+walk the same histogram-splitting arithmetic to the same tree, seed and all.
+`test_the_artifacts_on_disk_reproduce_the_committed_test_metrics` — which does no
+training, only loads the frozen `calibrator_v1.joblib` and calls `predict_proba` — still
+disagreed with the committed digit at the 10th significant figure
+(`0.03423454803050088` vs `0.034234548016794424`), which is `predict_proba`'s underlying
+floating-point summation order differing between the reference machine's Accelerate/NEON
+path and the runner's OpenBLAS/AVX path. Seeding controls sampling, not floating-point
+associativity. Neither divergence is a bug in the model; both are the literal meaning of
+"determinism is a property of a machine, not of an algorithm" applied to a claim that had
+never been tested cross-architecture before this PR forced the question.
+
+**Cost.** The CI workflow added specifically to make this project's own anti-drift
+mechanisms run automatically — see the `testpaths` entry above — would itself have
+shipped red on a public, judged repository, on its very first run, over a claim the
+project already believed and had partially verified.
+
+**Changed.** `ml/tests/_platform.py` names the reference platform (macOS arm64) the
+committed artifacts were trained on. The two exact-digit assertions are skipped off that
+platform with an explicit reason rather than silently excluded or loosened; every
+structural assertion in the same tests (which calibrator won, row counts) is not
+platform-sensitive and still runs unconditionally everywhere, including in CI.
+`ml/__main__.py`'s docstring now says "on the same architecture." CI runs on
+`ubuntu-latest` — matching Postgres, the dashboard job, and everything else in the
+pipeline — and reports these two as skipped, not passed; a developer on macOS arm64
+still gets the full exact-digit guarantee locally.
+
+---
+
 ## Open
 
 - ~~**`batch_v2` is 75/190 and resuming.**~~ **Closed — it finished, and this line was

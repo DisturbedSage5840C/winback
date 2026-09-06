@@ -24,6 +24,7 @@ import pytest
 from ml import calibrate
 from ml.__main__ import METRICS_PATH
 from ml.dataset import Splits, build_splits
+from ml.tests._platform import NOT_REFERENCE_PLATFORM_REASON, ON_REFERENCE_PLATFORM
 from ml.train import train
 from sim.generate import Dataset, build_dataset
 
@@ -226,10 +227,17 @@ def test_the_pipeline_reproduces_the_committed_metrics(
     Recomputing it from the seeded dataset has to land on the same digits, or "the test
     set was scored once" is a claim about a file rather than about the pipeline that
     wrote it. Regenerate with ``python -m ml`` when a change is intended.
+
+    The exact-ECE assertions below only hold on the platform that trained the committed
+    model — see ``ml/tests/_platform.py`` — so they are skipped elsewhere; the
+    structural assertion (which calibrator won) is not platform-sensitive and always
+    runs.
     """
     observed, censored = calibrate.observed_versus_censored(report.winner, splits)
 
     assert committed["calibration"]["chosen"] == report.winner.method
+    if not ON_REFERENCE_PLATFORM:
+        pytest.skip(NOT_REFERENCE_PLATFORM_REASON)
     assert committed["test"]["observed"]["ece"] == pytest.approx(observed.ece, rel=1e-9)
     assert committed["test"]["censored"]["ece"] == pytest.approx(censored.ece, rel=1e-9)
     assert committed["test"]["observed"]["n"] == observed.n

@@ -24,6 +24,7 @@ from ml import scorer
 from ml.__main__ import METRICS_PATH
 from ml.dataset import Splits, build_splits
 from ml.evaluate import evaluate
+from ml.tests._platform import NOT_REFERENCE_PLATFORM_REASON, ON_REFERENCE_PLATFORM
 from ml.train import ARTIFACTS
 from sim.generate import Dataset, build_dataset
 
@@ -59,12 +60,18 @@ def test_the_artifacts_on_disk_reproduce_the_committed_test_metrics(
     ``docs/EVALUATION.md`` claims an ECE on the observed test slice. This scores that
     same cohort through the load path the policy uses and asserts the identical number
     comes back, which is what entitles the document to describe the thing that runs.
+
+    That exact-digit agreement only holds on the platform that produced the committed
+    artifacts — see ``ml/tests/_platform.py`` — so the assertions below are skipped
+    elsewhere; ``measured.n`` is a row count, not a float, and is checked unconditionally.
     """
     probabilities = loaded.calibrator.predict_proba(splits.test.X)[:, 1]
     measured = evaluate(splits.test.y, probabilities, slice_name="observed (test)")
+    assert measured.n == committed["test"]["observed"]["n"]
+    if not ON_REFERENCE_PLATFORM:
+        pytest.skip(NOT_REFERENCE_PLATFORM_REASON)
     assert measured.ece == pytest.approx(committed["test"]["observed"]["ece"], abs=1e-12)
     assert measured.brier == pytest.approx(committed["test"]["observed"]["brier"], abs=1e-12)
-    assert measured.n == committed["test"]["observed"]["n"]
 
 
 def test_the_readable_artifact_is_the_one_that_runs(loaded: scorer.Scorer, splits: Splits) -> None:

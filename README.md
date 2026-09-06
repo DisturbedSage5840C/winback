@@ -148,7 +148,7 @@ about why "it works on my machine" is not a test.
 
 ## 07 — What broke
 
-[`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) has **46 entries**, written as they happened
+[`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) has **47 entries**, written as they happened
 rather than reconstructed at the end. Four worth reading, because they are the four
 kinds of mistake this project actually made:
 

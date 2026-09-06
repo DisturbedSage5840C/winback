@@ -3,10 +3,15 @@
     python -m ml            # full pipeline, writes ml/artifacts/ and the chart
     python -m ml --no-save  # same numbers, writes nothing
 
-Running this a second time must reproduce the committed numbers exactly: the dataset
-is seeded, the split is by time, ``PARAMS`` carries a fixed ``random_state``, and
-nothing here samples. If a rerun moves a digit, something is non-deterministic and that
-is a bug worth chasing, not a rounding difference to shrug at.
+Running this a second time, **on the same architecture**, must reproduce the committed
+numbers exactly: the dataset is seeded, the split is by time, ``PARAMS`` carries a fixed
+``random_state``, and nothing here samples. If a rerun on the reference platform (macOS
+arm64 — see ``requirements.txt``) moves a digit, something is non-deterministic and that
+is a bug worth chasing, not a rounding difference to shrug at. A rerun on a *different*
+CPU architecture (e.g. Linux x86_64) is not held to the same bar: XGBoost's histogram
+training and the floating-point arithmetic under ``predict_proba`` are not bit-identical
+across architectures, seed and all — see ``ml/tests/_platform.py`` and
+docs/WHAT_BROKE.md.
 
 **The test split is scored exactly once, at the end of this file.** Everything above it
 — early stopping, calibrator choice — is decided on train and calibrate. That ordering

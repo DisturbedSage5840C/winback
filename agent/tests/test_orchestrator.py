@@ -151,9 +151,7 @@ def test_the_gated_tools_are_never_handed_to_the_sdk(settings, scorer, rates):
     from agent.tools import workbench_from_dataset
 
     bench = workbench_from_dataset(scorer=scorer, rates=rates, cohort="test")
-    options = _options(
-        bench, AuditWriter(bench=bench, run_id="opts", arm="D"), settings, _OFF_LANE
-    )
+    options = _options(bench, AuditWriter(bench=bench, run_id="opts", arm="D"), settings, _OFF_LANE)
 
     assert set(options.allowed_tools) == set(PREAPPROVED_TOOLS)
     assert set(options.allowed_tools).isdisjoint(GATED_TOOLS)
@@ -169,9 +167,7 @@ def test_the_run_does_not_inherit_local_claude_code_settings(settings, scorer, r
     from agent.tools import workbench_from_dataset
 
     bench = workbench_from_dataset(scorer=scorer, rates=rates, cohort="test")
-    options = _options(
-        bench, AuditWriter(bench=bench, run_id="opts", arm="D"), settings, _OFF_LANE
-    )
+    options = _options(bench, AuditWriter(bench=bench, run_id="opts", arm="D"), settings, _OFF_LANE)
 
     assert options.setting_sources == []
     assert options.max_turns == settings.max_turns_per_item
@@ -184,9 +180,7 @@ def test_the_agent_is_bounded_in_turns(settings, scorer, rates):
     from agent.tools import workbench_from_dataset
 
     bench = workbench_from_dataset(scorer=scorer, rates=rates, cohort="test")
-    options = _options(
-        bench, AuditWriter(bench=bench, run_id="opts", arm="D"), settings, _OFF_LANE
-    )
+    options = _options(bench, AuditWriter(bench=bench, run_id="opts", arm="D"), settings, _OFF_LANE)
     assert 1 <= options.max_turns <= 12
 
 

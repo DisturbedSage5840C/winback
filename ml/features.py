@@ -147,9 +147,7 @@ class BankMethodRates:
         # attempts for a mid-sized bank; below that the prior should dominate.
         grand = sum(total) / len(total) if total else 0.0
         m = 50.0
-        rates = {
-            key: (sum(vals) + m * grand) / (len(vals) + m) for key, vals in seen.items()
-        }
+        rates = {key: (sum(vals) + m * grand) / (len(vals) + m) for key, vals in seen.items()}
         return cls(rates=rates, fallback=grand)
 
 

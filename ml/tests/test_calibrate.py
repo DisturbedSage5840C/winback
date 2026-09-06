@@ -120,9 +120,7 @@ def test_but_it_still_ranks_correctly_off_distribution(
 def test_the_censored_slice_is_never_used_to_fit_anything(splits: Splits) -> None:
     """It is evidence about the model, and evidence the model has seen is not evidence."""
     fitted_on = set(splits.train.attempt_ids) | set(splits.calibrate.attempt_ids)
-    censored = set(splits.censored_calibrate.attempt_ids) | set(
-        splits.censored_test.attempt_ids
-    )
+    censored = set(splits.censored_calibrate.attempt_ids) | set(splits.censored_test.attempt_ids)
 
     assert fitted_on.isdisjoint(censored)
     assert fitted_on.isdisjoint(splits.test.attempt_ids)
@@ -203,16 +201,14 @@ def test_the_folds_cover_the_split_exactly_once() -> None:
         assert covered == list(range(n))
 
 
-def test_a_fold_is_scored_by_a_calibrator_that_never_saw_it(
-    trained, splits: Splits
-) -> None:
+def test_a_fold_is_scored_by_a_calibrator_that_never_saw_it(trained, splits: Splits) -> None:
     """If ``_out_of_fold`` were quietly returning in-sample predictions, every claim on
     this page would still pass and mean nothing."""
     out_of_fold = calibrate._out_of_fold(trained, splits.calibrate, "isotonic")
     in_sample = next(
-        c for c in calibrate.fit_calibrators(
-            trained, splits.calibrate, splits.censored_calibrate
-        ) if c.method == "isotonic"
+        c
+        for c in calibrate.fit_calibrators(trained, splits.calibrate, splits.censored_calibrate)
+        if c.method == "isotonic"
     ).calibrator.predict_proba(splits.calibrate.X)[:, 1]
 
     assert not np.isnan(out_of_fold).any()
@@ -246,6 +242,4 @@ def test_training_twice_gives_the_same_model(splits: Splits, trained) -> None:
     again = train(splits)
 
     assert again.best_iteration == trained.best_iteration
-    assert np.array_equal(
-        again.predict_proba(splits.test.X), trained.predict_proba(splits.test.X)
-    )
+    assert np.array_equal(again.predict_proba(splits.test.X), trained.predict_proba(splits.test.X))

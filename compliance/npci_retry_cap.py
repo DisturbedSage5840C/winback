@@ -91,6 +91,5 @@ def attempts_used_for_invoice(
     return sum(
         1
         for attempt in attempts
-        if attempt["invoice_id"] == invoice_id
-        and attempt.get("run_id") in (None, run_id)
+        if attempt["invoice_id"] == invoice_id and attempt.get("run_id") in (None, run_id)
     )

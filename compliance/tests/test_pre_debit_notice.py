@@ -37,9 +37,7 @@ def test_the_lead_time_is_twenty_four_hours() -> None:
 
 
 def test_a_timely_notice_approves_the_first_attempt() -> None:
-    result = check(
-        notice_sent_at=before_charge(48), charge_at=CHARGE_AT, attempt_number=1
-    )
+    result = check(notice_sent_at=before_charge(48), charge_at=CHARGE_AT, attempt_number=1)
     assert result.verdict is Verdict.APPROVE
     assert result.stop_reason is None
 
@@ -63,9 +61,7 @@ def test_lead_time_boundary(hours_before: float, allowed: bool, why: str) -> Non
 
 
 def test_a_late_notice_blocks_with_its_own_reason() -> None:
-    result = check(
-        notice_sent_at=before_charge(6), charge_at=CHARGE_AT, attempt_number=1
-    )
+    result = check(notice_sent_at=before_charge(6), charge_at=CHARGE_AT, attempt_number=1)
     assert result.verdict is Verdict.DENY
     assert result.stop_reason == NOTICE_TOO_LATE
     assert "18" in result.detail or "6" in result.detail
@@ -107,17 +103,13 @@ def test_a_retry_still_carries_the_warning_into_the_audit_row() -> None:
 
 
 def test_a_retry_with_a_late_notice_warns_too() -> None:
-    result = check(
-        notice_sent_at=before_charge(2), charge_at=CHARGE_AT, attempt_number=2
-    )
+    result = check(notice_sent_at=before_charge(2), charge_at=CHARGE_AT, attempt_number=2)
     assert result.allowed is True
     assert result.metadata["warning"] == NOTICE_TOO_LATE
 
 
 def test_a_retry_with_a_good_notice_carries_no_warning() -> None:
-    result = check(
-        notice_sent_at=before_charge(48), charge_at=CHARGE_AT, attempt_number=2
-    )
+    result = check(notice_sent_at=before_charge(48), charge_at=CHARGE_AT, attempt_number=2)
     assert result.allowed is True
     assert "warning" not in result.metadata
 

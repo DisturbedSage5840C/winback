@@ -131,13 +131,17 @@ def check_failure_rates(dataset: Dataset) -> list[Check]:
     checks = [
         _band(
             "UPI Autopay debit failure rate",
-            _rate(upi), 8.0, 15.0,
+            _rate(upi),
+            8.0,
+            15.0,
             "README §01; Razorpay/industry reporting on UPI Autopay mandate failures",
             n=len(upi),
         ),
         _band(
             "Card mandate debit failure rate",
-            _rate(card), 2.0, 3.0,
+            _rate(card),
+            2.0,
+            3.0,
             "README §01; card e-mandate failure rates run far below UPI Autopay",
             n=len(card),
         ),
@@ -175,7 +179,9 @@ def check_decline_taxonomy(dataset: Dataset) -> list[Check]:
     checks = [
         _band(
             "Technical declines, share of all declines",
-            td_share, 14.0, 22.0,
+            td_share,
+            14.0,
+            22.0,
             "NPCI TD/BD taxonomy: technical declines run ~18% of failed mandate debits",
             n=total,
         )
@@ -186,7 +192,9 @@ def check_decline_taxonomy(dataset: Dataset) -> list[Check]:
     checks.append(
         _band(
             "Business declines, share of all declines",
-            bd_share, 78.0, 86.0,
+            bd_share,
+            78.0,
+            86.0,
             "NPCI TD/BD taxonomy: the complement of the ~18% technical share",
             n=total,
         )
@@ -210,9 +218,7 @@ def check_decline_taxonomy(dataset: Dataset) -> list[Check]:
     return checks
 
 
-def _cycle_ratio(
-    dataset: Dataset, method: str
-) -> tuple[float | None, float | None, int, int]:
+def _cycle_ratio(dataset: Dataset, method: str) -> tuple[float | None, float | None, int, int]:
     """Failure rate early in the salary cycle vs late, for one rail."""
     salary_day = {c.customer_id: c.salary_day for c in dataset.customers}
     customer_of = {s.subscription_id: s.customer_id for s in dataset.subscriptions}
@@ -282,9 +288,7 @@ def check_payday_signal(dataset: Dataset) -> list[Check]:
     # rail-dependent -- waiting for payday is worth a lot on UPI Autopay and almost
     # nothing on a card mandate -- so a world where both rails had the same cycle
     # shape would make half the policy's reasoning unjustifiable.
-    card_early, card_late, card_n_early, card_n_late = _cycle_ratio(
-        dataset, "card_mandate"
-    )
+    card_early, card_late, card_n_early, card_n_late = _cycle_ratio(dataset, "card_mandate")
     if card_early is None or card_late is None or min(card_n_early, card_n_late) < 30:
         checks.append(
             Check(
@@ -469,9 +473,7 @@ def check_censoring(dataset: Dataset) -> list[Check]:
             name="Censored region is genuinely different",
             measured=f"observed {observed_p:.1f}% vs censored {censored_p:.1f}% p(success)",
             expected="differ by >=3pp",
-            verdict=(
-                Verdict.PASS if abs(censored_p - observed_p) >= 3.0 else Verdict.FAIL
-            ),
+            verdict=(Verdict.PASS if abs(censored_p - observed_p) >= 3.0 else Verdict.FAIL),
             source=(
                 "The legacy filters select on amount and rail, both of which move "
                 "p(success); if they did not, there would be no bias to survive."
@@ -520,8 +522,7 @@ def check_censoring(dataset: Dataset) -> list[Check]:
         else:
             low, high = 100 * mean(below), 100 * mean(above)
             note = (
-                f"{low:.1f}% vs {high:.1f}%  ({low - high:+.1f}pp)  "
-                f"n={len(below):,}/{len(above):,}"
+                f"{low:.1f}% vs {high:.1f}%  ({low - high:+.1f}pp)  n={len(below):,}/{len(above):,}"
             )
         checks.append(
             Check(
@@ -591,10 +592,7 @@ def check_cohorts(dataset: Dataset) -> list[Check]:
     return [
         Check(
             name="Cohorts are ordered in time",
-            measured=(
-                f"train<={max(by_cohort['train'])}  "
-                f"test>={min(by_cohort['test'])}"
-            ),
+            measured=(f"train<={max(by_cohort['train'])}  test>={min(by_cohort['test'])}"),
             expected="train < calibrate < test by mandate start",
             verdict=Verdict.PASS if ordered else Verdict.FAIL,
             source="db/01_schema.sql, subscriptions.cohort",
@@ -730,7 +728,12 @@ def chart(dataset: Dataset, path: Path = ARTIFACT) -> Path:
     fig, axes = plt.subplots(2, 2, figsize=(13.5, 9))
     fig.suptitle(
         "Does the simulated world behave like the one NPCI publishes about?",
-        fontsize=14, fontweight="bold", color=INK, x=0.045, ha="left", y=0.975,
+        fontsize=14,
+        fontweight="bold",
+        color=INK,
+        x=0.045,
+        ha="left",
+        y=0.975,
     )
 
     method_of = {s.subscription_id: s.method for s in dataset.subscriptions}
@@ -750,25 +753,39 @@ def chart(dataset: Dataset, path: Path = ARTIFACT) -> Path:
         if rail not in bands:
             continue
         low, high = bands[rail]
-        ax.add_patch(
-            plt.Rectangle((index - 0.46, low), 0.92, high - low, color=BAND, zorder=0)
-        )
+        ax.add_patch(plt.Rectangle((index - 0.46, low), 0.92, high - low, color=BAND, zorder=0))
     ax.bar(
-        range(len(rails)), values, width=0.44,
-        color=[RAIL_HUE[m] for m in rails], zorder=2,
+        range(len(rails)),
+        values,
+        width=0.44,
+        color=[RAIL_HUE[m] for m in rails],
+        zorder=2,
     )
     # The cited band rides under its own rail rather than floating in the plot: a
     # reader should never have to work out which shaded rectangle a label refers to.
     for index, (rail, value) in enumerate(zip(rails, values, strict=True)):
-        ax.text(index, value + 0.45, f"{value:.1f}%", ha="center", color=INK,
-                fontsize=10, fontweight="medium")
+        ax.text(
+            index,
+            value + 0.45,
+            f"{value:.1f}%",
+            ha="center",
+            color=INK,
+            fontsize=10,
+            fontweight="medium",
+        )
         band = (
             f"cited {bands[rail][0]:.0f}-{bands[rail][1]:.0f}%"
             if rail in bands
             else "no published band"
         )
-        ax.text(index, -1.5, f"n={len(rows_by_rail[rail]):,}  ·  {band}", ha="center",
-                color=MUTED, fontsize=8)
+        ax.text(
+            index,
+            -1.5,
+            f"n={len(rows_by_rail[rail]):,}  ·  {band}",
+            ha="center",
+            color=MUTED,
+            fontsize=8,
+        )
     ax.set_xticks(range(len(rails)))
     ax.set_xticklabels([m.replace("_", " ") for m in rails], color=INK, fontsize=9.5)
     ax.set_ylim(0, 17)
@@ -790,20 +807,43 @@ def chart(dataset: Dataset, path: Path = ARTIFACT) -> Path:
     labels = ("TD\ntechnical", "BD transient\nretryable", "BD hard\nterminal")
 
     ax.barh(
-        range(len(order)), shares, height=0.5,
-        color=[SEVERITY_HUE[c] for c in order], zorder=2,
+        range(len(order)),
+        shares,
+        height=0.5,
+        color=[SEVERITY_HUE[c] for c in order],
+        zorder=2,
     )
     for index, (share, root_cause) in enumerate(zip(shares, order, strict=True)):
-        ax.text(share + 1.2, index, f"{share:.1f}%", va="center", color=INK,
-                fontsize=10, fontweight="medium")
-        ax.text(share + 7.5, index, f"{classes[root_cause]:,} attempts", va="center",
-                color=MUTED, fontsize=8)
+        ax.text(
+            share + 1.2,
+            index,
+            f"{share:.1f}%",
+            va="center",
+            color=INK,
+            fontsize=10,
+            fontweight="medium",
+        )
+        ax.text(
+            share + 7.5,
+            index,
+            f"{classes[root_cause]:,} attempts",
+            va="center",
+            color=MUTED,
+            fontsize=8,
+        )
     # The published figure is about the technical share alone, so the reference mark
     # sits under the TD row only. Drawn across all three it would read as a threshold
     # the other two classes were also being judged against.
     ax.plot([18, 18], [0.25, 0.44], color=INK, linewidth=1.4, zorder=3)
-    ax.text(18.8, 0.44, "NPCI: ~18% of declines are technical", color=INK,
-            fontsize=8, va="center", ha="left")
+    ax.text(
+        18.8,
+        0.44,
+        "NPCI: ~18% of declines are technical",
+        color=INK,
+        fontsize=8,
+        va="center",
+        ha="left",
+    )
     ax.set_yticks(range(len(order)))
     ax.set_yticklabels(labels, color=INK, fontsize=9)
     ax.set_xlim(0, max(shares) * 1.5)
@@ -831,13 +871,27 @@ def chart(dataset: Dataset, path: Path = ARTIFACT) -> Path:
     centres = [b * CYCLE_BUCKET_DAYS + CYCLE_BUCKET_DAYS / 2 for b in bucket_ids]
     for rail in ("upi_autopay", "card_mandate"):
         series = [_balance_rate(buckets[rail, b]) for b in bucket_ids]
-        ax.plot(centres, series, color=RAIL_HUE[rail], linewidth=2,
-                marker="o", markersize=5.5, markeredgecolor="white",
-                markeredgewidth=2, zorder=3, label=rail.replace("_", " "))
+        ax.plot(
+            centres,
+            series,
+            color=RAIL_HUE[rail],
+            linewidth=2,
+            marker="o",
+            markersize=5.5,
+            markeredgecolor="white",
+            markeredgewidth=2,
+            zorder=3,
+            label=rail.replace("_", " "),
+        )
         ax.annotate(
             f"{rail.replace('_', ' ')}  {series[-1]:.1f}%",
-            xy=(centres[-1], series[-1]), xytext=(8, 0), textcoords="offset points",
-            color=RAIL_HUE[rail], fontsize=9, fontweight="medium", va="center",
+            xy=(centres[-1], series[-1]),
+            xytext=(8, 0),
+            textcoords="offset points",
+            color=RAIL_HUE[rail],
+            fontsize=9,
+            fontweight="medium",
+            va="center",
         )
     ax.set_xlim(0, 38)
     # Headroom above the tallest bucket so the legend never crosses a line.
@@ -863,8 +917,15 @@ def chart(dataset: Dataset, path: Path = ARTIFACT) -> Path:
     # Two rows rather than one stacked bar: the suppressed segments are narrow, and
     # three labels along a single bar collide no matter where they are placed.
     ax.barh([1], [observed_retries], height=0.34, color=RAIL_HUE["upi_autopay"], zorder=2)
-    ax.text(observed_retries + total_retries * 0.015, 1, f"{observed_retries:,}",
-            va="center", color=INK, fontsize=10, fontweight="medium")
+    ax.text(
+        observed_retries + total_retries * 0.015,
+        1,
+        f"{observed_retries:,}",
+        va="center",
+        color=INK,
+        fontsize=10,
+        fontweight="medium",
+    )
 
     gap_width = total_retries * 0.006  # a surface gap, not a stroke around the marks
     left = 0.0
@@ -884,13 +945,21 @@ def chart(dataset: Dataset, path: Path = ARTIFACT) -> Path:
     # render of this panel did.
     for offset, (count, colour, note) in zip((0.16, -0.16), segments, strict=True):
         ax.scatter([left + total_retries * 0.018], [offset], s=26, color=colour, zorder=3)
-        ax.text(left + total_retries * 0.035, offset, f"{count:,}  {note}",
-                va="center", color=INK, fontsize=8.5)
+        ax.text(
+            left + total_retries * 0.035,
+            offset,
+            f"{count:,}  {note}",
+            va="center",
+            color=INK,
+            fontsize=8.5,
+        )
 
     ax.set_yticks([1, 0])
     ax.set_yticklabels(
         ["retries the merchant\nactually made", "retries its filters\nsuppressed"],
-        color=INK, fontsize=9, linespacing=1.4,
+        color=INK,
+        fontsize=9,
+        linespacing=1.4,
     )
 
     caption = f"{len(censored) / total_retries:.0%} of all retries were never observed"
@@ -906,8 +975,13 @@ def chart(dataset: Dataset, path: Path = ARTIFACT) -> Path:
             "The bias is in the covariates — cheap, netbanking, early — not in the rate."
         )
     ax.annotate(
-        caption, xy=(0, -0.21), xycoords="axes fraction", fontsize=8.5,
-        color=MUTED, va="top", linespacing=1.6,
+        caption,
+        xy=(0, -0.21),
+        xycoords="axes fraction",
+        fontsize=8.5,
+        color=MUTED,
+        va="top",
+        linespacing=1.6,
     )
 
     ax.set_ylim(-0.75, 1.55)
@@ -922,12 +996,14 @@ def chart(dataset: Dataset, path: Path = ARTIFACT) -> Path:
 
     summary = dataset.summary()
     fig.text(
-        0.045, 0.022,
+        0.045,
+        0.022,
         f"dataset {summary['dataset_version']} · fingerprint {summary['fingerprint']} · "
         f"{summary['subscriptions']:,} subscriptions · {summary['invoices']:,} invoices · "
         f"{summary['attempts_total']:,} attempts · generated by sim/generate.py, "
         f"checked by sim/validate_realism.py",
-        fontsize=7.5, color=MUTED,
+        fontsize=7.5,
+        color=MUTED,
     )
 
     fig.tight_layout(rect=(0.03, 0.045, 0.98, 0.945), h_pad=4.5, w_pad=5)
@@ -950,7 +1026,6 @@ def _censoring_gap(dataset: Dataset) -> tuple[float, float] | None:
     return 100 * mean(seen), 100 * mean(unseen)
 
 
-
 # --------------------------------------------------------------------------- cli
 
 
@@ -960,9 +1035,7 @@ def main() -> int:
     parser.add_argument("--chart", action="store_true", help=f"write {ARTIFACT}")
     args = parser.parse_args()
 
-    dataset = (
-        build_dataset(args.subscriptions) if args.subscriptions else build_dataset()
-    )
+    dataset = build_dataset(args.subscriptions) if args.subscriptions else build_dataset()
     checks = run(dataset)
 
     summary = dataset.summary()

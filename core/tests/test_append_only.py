@@ -196,9 +196,7 @@ def test_trigger_refuses_delete_even_for_the_owner(
     owner_conn: psycopg.Connection, seeded: dict[str, str], table: str
 ) -> None:
     """The question a panelist actually asks: what stops *you* from editing this?"""
-    message = _expect_refusal(
-        owner_conn, psycopg.errors.RestrictViolation, f"DELETE FROM {table}"
-    )
+    message = _expect_refusal(owner_conn, psycopg.errors.RestrictViolation, f"DELETE FROM {table}")
     assert "append_only_violation" in message
     assert "DELETE" in message
 
@@ -301,9 +299,7 @@ def test_supersede_is_the_sanctioned_correction_path(
     assert row["decided_by"] == "human"
 
 
-def test_live_state_remains_mutable(
-    owner_conn: psycopg.Connection, seeded: dict[str, str]
-) -> None:
+def test_live_state_remains_mutable(owner_conn: psycopg.Connection, seeded: dict[str, str]) -> None:
     """Immutability applies to facts, not to state. An invoice has to be able to move
     from at_risk to recovered or the product does not work."""
     with owner_conn.transaction():

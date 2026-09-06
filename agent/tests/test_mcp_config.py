@@ -188,9 +188,7 @@ def test_start_at_skips_the_rung_that_just_failed(monkeypatch, settings):
     """A mid-run demotion knows local is dead — re-probing it would spend twenty seconds
     re-learning that on every subsequent invoice."""
     calls: list[str] = []
-    monkeypatch.setattr(
-        mcp_config, "probe_local", lambda *a, **k: calls.append("local") or "dead"
-    )
+    monkeypatch.setattr(mcp_config, "probe_local", lambda *a, **k: calls.append("local") or "dead")
     monkeypatch.setattr(mcp_config, "probe_remote", lambda *a, **k: calls.append("remote"))
 
     lane = open_lane(replace(settings, mcp_mode="local"), start_at="remote")

@@ -39,8 +39,8 @@ def test_the_ceilings_are_fifteen_thousand_and_one_lakh() -> None:
     [
         (1, True),
         (14_999, True),
-        (15_000, True),      # at the ceiling: permitted
-        (15_001, False),     # one rupee over: escalates
+        (15_000, True),  # at the ceiling: permitted
+        (15_001, False),  # one rupee over: escalates
         (20_000, False),
     ],
 )
@@ -53,10 +53,10 @@ def test_standard_ceiling_boundary(rupee_amount: int, allowed: bool) -> None:
     ("rupee_amount", "allowed"),
     [
         (15_000, True),
-        (15_001, True),      # over the standard ceiling, well under the elevated one
+        (15_001, True),  # over the standard ceiling, well under the elevated one
         (99_999, True),
-        (1_00_000, True),    # at the elevated ceiling: permitted
-        (1_00_001, False),   # one rupee over: escalates
+        (1_00_000, True),  # at the elevated ceiling: permitted
+        (1_00_001, False),  # one rupee over: escalates
     ],
 )
 def test_elevated_ceiling_boundary(rupee_amount: int, allowed: bool) -> None:

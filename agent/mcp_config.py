@@ -321,8 +321,12 @@ def open_lane(settings: Settings | None = None, *, start_at: str | None = None) 
         else:
             reason = probe_remote(key_id, secret)
         if reason is None:
-            return Lane(requested=requested, mode=mode, servers=_servers_for(mode, settings),
-                        demotions=demotions)
+            return Lane(
+                requested=requested,
+                mode=mode,
+                servers=_servers_for(mode, settings),
+                demotions=demotions,
+            )
         demotions.append(f"{mode} unreachable — {reason}")
 
     return Lane(requested=requested, mode="off", servers={}, demotions=demotions)

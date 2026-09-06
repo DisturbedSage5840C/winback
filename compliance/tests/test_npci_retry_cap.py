@@ -59,8 +59,19 @@ def test_the_cap_holds_against_a_confident_model() -> None:
     silently in production.
     """
     parameters = set(inspect.signature(check).parameters)
-    forbidden = {"probability", "prob", "p", "score", "confidence", "expected_value",
-                 "override", "force", "model", "urgency", "amount_paise"}
+    forbidden = {
+        "probability",
+        "prob",
+        "p",
+        "score",
+        "confidence",
+        "expected_value",
+        "override",
+        "force",
+        "model",
+        "urgency",
+        "amount_paise",
+    }
     assert not (parameters & forbidden), (
         f"the retry cap must not be able to see {parameters & forbidden}: a legal "
         "limit that takes a probability is a limit that can be argued with"

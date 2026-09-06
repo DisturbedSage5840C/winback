@@ -33,9 +33,7 @@ def test_a_perfectly_calibrated_input_scores_zero() -> None:
 
 def test_confident_and_wrong_scores_one() -> None:
     """The worst attainable ECE, as a fixed point for the scale."""
-    assert expected_calibration_error(
-        np.zeros(10, dtype=int), np.ones(10)
-    ) == pytest.approx(1.0)
+    assert expected_calibration_error(np.zeros(10, dtype=int), np.ones(10)) == pytest.approx(1.0)
 
 
 def test_ece_is_weighted_by_how_many_rows_are_in_the_bin() -> None:
@@ -170,9 +168,7 @@ def test_the_threshold_may_be_one_value_per_row() -> None:
     y_prob = np.array([0.30, 0.30])
     amounts = np.array([1_000_00.0, 1_000_00.0])
 
-    result = rupee_confusion(
-        y_true, y_prob, amounts, threshold=np.array([0.20, 0.40])
-    )
+    result = rupee_confusion(y_true, y_prob, amounts, threshold=np.array([0.20, 0.40]))
 
     assert result["margin_recovered_paise"] == pytest.approx(1_000_00.0 * 0.25)
     assert result["margin_forgone_paise"] == pytest.approx(1_000_00.0 * 0.25)

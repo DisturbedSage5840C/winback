@@ -147,8 +147,7 @@ class CalibrationReport:
         for c in self.candidates:
             flag = "" if c.admissible else "  DISQUALIFIED"
             lines.append(
-                f"{c.out_of_fold.as_row()}{c.in_sample.ece:>11.4f}"
-                f"{c.degenerate_rows:>10,d}{flag}"
+                f"{c.out_of_fold.as_row()}{c.in_sample.ece:>11.4f}{c.degenerate_rows:>10,d}{flag}"
             )
         lines.append("")
         for c in self.candidates:
@@ -172,9 +171,7 @@ def _fold_bounds(n: int, folds: int) -> list[tuple[int, int]]:
     return [(lo, hi) for lo, hi in pairwise(edges) if hi > lo]
 
 
-def _out_of_fold(
-    trained: TrainedModel, calibration: Matrix, method: Method
-) -> np.ndarray:
+def _out_of_fold(trained: TrainedModel, calibration: Matrix, method: Method) -> np.ndarray:
     """Predict every calibration row from a calibrator that never saw it.
 
     A fold whose training portion carries only one class cannot fit a calibrator, and
@@ -234,9 +231,7 @@ def fit_calibrators(
                 out_of_fold=evaluate(
                     calibration.y[scored], oof[scored], slice_name=f"{method} (oof)"
                 ),
-                in_sample=evaluate(
-                    calibration.y, on_observed, slice_name=f"{method} (in-sample)"
-                ),
+                in_sample=evaluate(calibration.y, on_observed, slice_name=f"{method} (in-sample)"),
                 degenerate_rows=_degenerate(on_observed) + degenerate_censored,
                 degenerate_censored_rows=degenerate_censored,
             )
@@ -244,9 +239,7 @@ def fit_calibrators(
     return tuple(candidates)
 
 
-def choose(
-    trained: TrainedModel, calibration: Matrix, censored: Matrix
-) -> CalibrationReport:
+def choose(trained: TrainedModel, calibration: Matrix, censored: Matrix) -> CalibrationReport:
     """Fit all three, disqualify the degenerate ones, rank the rest on out-of-fold ECE."""
     uncalibrated = evaluate(
         calibration.y,
@@ -269,9 +262,7 @@ def choose(
         admissible,
         key=lambda c: (round(c.out_of_fold.ece, 4), COMPLEXITY[c.method]),
     )
-    return CalibrationReport(
-        uncalibrated=uncalibrated, candidates=candidates, winner=winner
-    )
+    return CalibrationReport(uncalibrated=uncalibrated, candidates=candidates, winner=winner)
 
 
 def save(report: CalibrationReport, *, directory: Path = ARTIFACTS) -> Path:

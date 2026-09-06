@@ -101,8 +101,8 @@ def test_a_large_amount_at_risk_changes_nothing() -> None:
         (0, True),
         (1, True),
         (6.9, True),
-        (7.0, True),      # exactly at the edge: still inside
-        (7.1, False),     # past it
+        (7.0, True),  # exactly at the edge: still inside
+        (7.1, False),  # past it
         (30, False),
     ],
 )
@@ -199,9 +199,7 @@ def test_reconsent_cooloff_boundary(days_since_withdrawal: float, may_ask: bool)
 def test_an_active_customer_may_always_be_asked() -> None:
     """The cooloff attaches to a withdrawal, not to everybody."""
     assert (
-        may_request_reconsent(
-            consent_status="active", consent_updated_at=days_ago(1), now=NOW
-        )
+        may_request_reconsent(consent_status="active", consent_updated_at=days_ago(1), now=NOW)
         is True
     )
 

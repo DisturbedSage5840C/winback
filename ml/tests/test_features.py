@@ -42,8 +42,11 @@ def _row(dataset: Dataset, rates: BankMethodRates, attempt: generate.AttemptRow)
     subscription = subs[attempt.subscription_id]
     history = tuple(
         sorted(
-            (a for a in dataset.attempts if a.subscription_id == attempt.subscription_id
-             and a.observed),
+            (
+                a
+                for a in dataset.attempts
+                if a.subscription_id == attempt.subscription_id and a.observed
+            ),
             key=lambda a: (a.attempted_at, a.attempt_number),
         )
     )
@@ -53,9 +56,7 @@ def _row(dataset: Dataset, rates: BankMethodRates, attempt: generate.AttemptRow)
         customer=customers[subscription.customer_id],
         invoice=invoices[attempt.invoice_id],
         candidate=candidate,
-        prior=PriorState.before(
-            candidate, invoice_id=attempt.invoice_id, history=history
-        ),
+        prior=PriorState.before(candidate, invoice_id=attempt.invoice_id, history=history),
         rates=rates,
     )
 
@@ -67,8 +68,16 @@ def test_the_candidate_carries_no_outcome() -> None:
     ``Candidate`` ever grows an outcome field, a hundred careful call sites stop being
     the thing protecting the model and this fails instead.
     """
-    forbidden = {"outcome", "error_code", "error_reason", "root_cause_class",
-                 "p_success", "observed", "oracle_seed", "censoring_reason"}
+    forbidden = {
+        "outcome",
+        "error_code",
+        "error_reason",
+        "root_cause_class",
+        "p_success",
+        "observed",
+        "oracle_seed",
+        "censoring_reason",
+    }
     assert forbidden.isdisjoint(Candidate.__slots__)
 
 
@@ -87,9 +96,7 @@ def test_the_payday_is_not_readable_from_the_features(
 
     shifted = replace(
         dataset,
-        customers=tuple(
-            replace(c, salary_day=(c.salary_day % 28) + 1) for c in dataset.customers
-        ),
+        customers=tuple(replace(c, salary_day=(c.salary_day % 28) + 1) for c in dataset.customers),
     )
     after = _row(shifted, rates, attempt)
     assert before == after
@@ -107,15 +114,16 @@ def test_prior_state_never_reads_the_attempt_it_is_describing(
     attempt = next(a for a in dataset.attempts if a.observed and a.attempt_number > 1)
     history = tuple(
         sorted(
-            (a for a in dataset.attempts if a.subscription_id == attempt.subscription_id
-             and a.observed),
+            (
+                a
+                for a in dataset.attempts
+                if a.subscription_id == attempt.subscription_id and a.observed
+            ),
             key=lambda a: (a.attempted_at, a.attempt_number),
         )
     )
     candidate = Candidate.from_attempt(attempt)
-    prior = PriorState.before(
-        candidate, invoice_id=attempt.invoice_id, history=history
-    )
+    prior = PriorState.before(candidate, invoice_id=attempt.invoice_id, history=history)
     assert prior.lifetime_attempts == sum(
         1 for a in history if a.attempted_at < attempt.attempted_at
     )
@@ -137,9 +145,7 @@ def test_a_later_attempt_cannot_inform_an_earlier_one(dataset: Dataset) -> None:
         outcome="captured",
     )
     assert (
-        PriorState.before(
-            candidate, invoice_id=attempt.invoice_id, history=(*history, future)
-        )
+        PriorState.before(candidate, invoice_id=attempt.invoice_id, history=(*history, future))
         == baseline
     )
 

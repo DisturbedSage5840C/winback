@@ -26,8 +26,8 @@ from compliance.root_cause import RootCause
 from core.money import paise
 
 NOW = datetime(2026, 9, 15, 1, 0, tzinfo=IST)
-LEGAL_SLOT = datetime(2026, 9, 15, 2, 0, tzinfo=IST)     # 02:00 IST, non-peak
-PEAK_SLOT = datetime(2026, 9, 15, 11, 0, tzinfo=IST)     # 11:00 IST, inside morning peak
+LEGAL_SLOT = datetime(2026, 9, 15, 2, 0, tzinfo=IST)  # 02:00 IST, non-peak
+PEAK_SLOT = datetime(2026, 9, 15, 11, 0, tzinfo=IST)  # 11:00 IST, inside morning peak
 
 
 def retry_request(**overrides: object) -> ActionRequest:
@@ -209,17 +209,13 @@ def test_escalating_and_writing_off_are_always_permitted(kind: ActionKind) -> No
 def test_the_most_restrictive_verdict_wins() -> None:
     """A redirect and a denial at once resolves to the denial. The reverse -- letting
     a permissive rule launder a blocking one -- is the classic composition bug."""
-    decision = evaluate(
-        retry_request(execute_at=PEAK_SLOT, attempts_used=4), now=NOW
-    )
+    decision = evaluate(retry_request(execute_at=PEAK_SLOT, attempts_used=4), now=NOW)
     assert decision.verdict is Verdict.DENY
     assert decision.stop_reason == "npci_1_plus_3_cap_exhausted"
 
 
 def test_escalation_outranks_a_redirect() -> None:
-    decision = evaluate(
-        retry_request(execute_at=PEAK_SLOT, amount_paise=paise(22_000)), now=NOW
-    )
+    decision = evaluate(retry_request(execute_at=PEAK_SLOT, amount_paise=paise(22_000)), now=NOW)
     assert decision.verdict is Verdict.ESCALATE_HUMAN
 
 
@@ -258,8 +254,15 @@ def test_the_guardrail_takes_no_probability_and_no_override() -> None:
 
     fields = set(ActionRequest.__dataclass_fields__)
     forbidden = {
-        "probability", "confidence", "score", "expected_value",
-        "override", "force", "urgency", "model_says", "approved_by_model",
+        "probability",
+        "confidence",
+        "score",
+        "expected_value",
+        "override",
+        "force",
+        "urgency",
+        "model_says",
+        "approved_by_model",
     }
     assert not (fields & forbidden), f"the gate can see {fields & forbidden}"
 

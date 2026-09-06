@@ -136,9 +136,7 @@ def run(*, dataset: Dataset | None = None, save: bool = True) -> dict[str, objec
 
     test_amounts = _amounts_paise(splits, "test")
     thresholds = break_even_threshold(test_amounts)
-    rupees = rupee_confusion(
-        splits.test.y, test_prob, test_amounts, threshold=thresholds
-    )
+    rupees = rupee_confusion(splits.test.y, test_prob, test_amounts, threshold=thresholds)
     declined = int((test_prob < thresholds).sum())
     print(
         f"₹ confusion at the per-invoice break-even threshold "
@@ -162,10 +160,7 @@ def run(*, dataset: Dataset | None = None, save: bool = True) -> dict[str, objec
             winner.predict_proba(splits.censored_test.X), splits.censored_test.oracle_p
         ),
     }
-    print(
-        f"{'oracle gap':22}{'signed':>10}{'abs':>10}{'p90 abs':>10}{'corr':>10}"
-        f"{'distinct':>10}"
-    )
+    print(f"{'oracle gap':22}{'signed':>10}{'abs':>10}{'p90 abs':>10}{'corr':>10}{'distinct':>10}")
     print("-" * 72)
     for name, g in gaps.items():
         print(

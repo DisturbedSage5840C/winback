@@ -130,9 +130,7 @@ def run(client: httpx.Client, probes: list[Probe]) -> None:
     order_id: str | None = None
     customer_id: str | None = None
 
-    def call(
-        probe: Probe, method: str, path: str, payload: dict[str, Any] | None = None
-    ) -> Any:
+    def call(probe: Probe, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
         try:
             response = client.request(method, f"{API}{path}", json=payload)
         except httpx.HTTPError as exc:
@@ -152,23 +150,36 @@ def run(client: httpx.Client, probes: list[Probe]) -> None:
 
     # --- 3. create_order -----------------------------------------------------
     p = probes[2]
-    body = call(p, "POST", "/orders", {
-        "amount": 49900, "currency": "INR", "receipt": "winback_probe_order",
-        "notes": {"source": "winback_live_lane_probe"},
-    })
+    body = call(
+        p,
+        "POST",
+        "/orders",
+        {
+            "amount": 49900,
+            "currency": "INR",
+            "receipt": "winback_probe_order",
+            "notes": {"source": "winback_live_lane_probe"},
+        },
+    )
     if p.usable and isinstance(body, dict):
         order_id = body.get("id")
         p.entity_id = order_id
 
     # --- 4. create_payment_link, notifications suppressed --------------------
     p = probes[3]
-    body = call(p, "POST", "/payment_links", {
-        "amount": 49900, "currency": "INR",
-        "description": "Winback probe - notifications suppressed",
-        "notify": {"sms": False, "email": False},
-        "reminder_enable": False,
-        "notes": {"source": "winback_live_lane_probe"},
-    })
+    body = call(
+        p,
+        "POST",
+        "/payment_links",
+        {
+            "amount": 49900,
+            "currency": "INR",
+            "description": "Winback probe - notifications suppressed",
+            "notify": {"sms": False, "email": False},
+            "reminder_enable": False,
+            "notes": {"source": "winback_live_lane_probe"},
+        },
+    )
     if p.usable and isinstance(body, dict):
         p.entity_id = body.get("id")
         sent = body.get("notify", {})
@@ -176,14 +187,20 @@ def run(client: httpx.Client, probes: list[Probe]) -> None:
 
     # --- 5. create_payment_link_upi (UPI-only accept) ------------------------
     p = probes[4]
-    body = call(p, "POST", "/payment_links", {
-        "amount": 49900, "currency": "INR",
-        "description": "Winback probe - UPI only",
-        "notify": {"sms": False, "email": False},
-        "reminder_enable": False,
-        "accept_partial": False,
-        "options": {"checkout": {"method": {"upi": "1"}}},
-    })
+    body = call(
+        p,
+        "POST",
+        "/payment_links",
+        {
+            "amount": 49900,
+            "currency": "INR",
+            "description": "Winback probe - UPI only",
+            "notify": {"sms": False, "email": False},
+            "reminder_enable": False,
+            "accept_partial": False,
+            "options": {"checkout": {"method": {"upi": "1"}}},
+        },
+    )
     if p.usable and isinstance(body, dict):
         p.entity_id = body.get("id")
 
@@ -204,10 +221,17 @@ def run(client: httpx.Client, probes: list[Probe]) -> None:
     p = probes[6]
     stamp = int(time.time())
     created = Probe(0, "")
-    cust = call(created, "POST", "/customers", {
-        "name": "Winback Probe", "contact": "9000090000",
-        "email": f"winback.probe.{stamp}@example.com", "fail_existing": "0",
-    })
+    cust = call(
+        created,
+        "POST",
+        "/customers",
+        {
+            "name": "Winback Probe",
+            "contact": "9000090000",
+            "email": f"winback.probe.{stamp}@example.com",
+            "fail_existing": "0",
+        },
+    )
     if created.usable and isinstance(cust, dict):
         customer_id = cust.get("id")
         body = call(p, "GET", f"/customers/{customer_id}/tokens")
@@ -221,14 +245,27 @@ def run(client: httpx.Client, probes: list[Probe]) -> None:
     # --- 8. create_subscription (needs a plan first) -------------------------
     p = probes[7]
     plan_probe = Probe(0, "")
-    plan = call(plan_probe, "POST", "/plans", {
-        "period": "monthly", "interval": 1,
-        "item": {"name": "Winback probe plan", "amount": 49900, "currency": "INR"},
-    })
+    plan = call(
+        plan_probe,
+        "POST",
+        "/plans",
+        {
+            "period": "monthly",
+            "interval": 1,
+            "item": {"name": "Winback probe plan", "amount": 49900, "currency": "INR"},
+        },
+    )
     if plan_probe.usable and isinstance(plan, dict):
-        body = call(p, "POST", "/subscriptions", {
-            "plan_id": plan["id"], "total_count": 12, "customer_notify": 0,
-        })
+        body = call(
+            p,
+            "POST",
+            "/subscriptions",
+            {
+                "plan_id": plan["id"],
+                "total_count": 12,
+                "customer_notify": 0,
+            },
+        )
         if p.usable and isinstance(body, dict):
             p.entity_id = body.get("id")
             p.note = f"plan={plan['id']}, status={body.get('status')}"
@@ -240,22 +277,37 @@ def run(client: httpx.Client, probes: list[Probe]) -> None:
     # Expected to fail. The exact error is the evidence for the adapter split, and
     # the control below is what turns "probably not activated" into an observation.
     p = probes[8]
-    body = call(p, "POST", "/payments/create/recurring", {
-        "email": "winback.probe@example.com", "contact": "9000090000",
-        "amount": 49900, "currency": "INR",
-        "order_id": order_id or "order_missing",
-        "customer_id": customer_id or "cust_missing",
-        "token": "token_probe_nonexistent",
-        "recurring": "1", "description": "Winback S2S probe",
-    })
+    body = call(
+        p,
+        "POST",
+        "/payments/create/recurring",
+        {
+            "email": "winback.probe@example.com",
+            "contact": "9000090000",
+            "amount": 49900,
+            "currency": "INR",
+            "order_id": order_id or "order_missing",
+            "customer_id": customer_id or "cust_missing",
+            "token": "token_probe_nonexistent",
+            "recurring": "1",
+            "description": "Winback S2S probe",
+        },
+    )
     if p.outcome is Outcome.FAIL:
         # The control: a documented sibling in the same route family, whose failure
         # mode I already know. Identical errors across the family while /orders
         # returns 200 means the family is not routed, not that I mistyped a URL.
         control = Probe(0, "")
-        control_body = call(control, "POST", "/payments/create/upi", {
-            "amount": 49900, "currency": "INR", "order_id": order_id or "order_missing",
-        })
+        control_body = call(
+            control,
+            "POST",
+            "/payments/create/upi",
+            {
+                "amount": 49900,
+                "currency": "INR",
+                "order_id": order_id or "order_missing",
+            },
+        )
         same = _error_text(control_body) == _error_text(body)
         p.outcome = Outcome.EXPECTED_FAIL
         p.note = (
@@ -277,20 +329,32 @@ def run(client: httpx.Client, probes: list[Probe]) -> None:
     # possibility of a send — the TRAI rail holds while the question gets answered.
     p = probes[9]
     inv_probe = Probe(0, "")
-    invoice = call(inv_probe, "POST", "/invoices", {
-        "type": "invoice", "draft": "1", "currency": "INR",
-        "description": "Winback probe - draft, never issued",
-        "customer": {
-            "name": "Winback Probe",
-            "contact": "9000090000",
-            "email": f"winback.probe.inv.{stamp}@example.com",
+    invoice = call(
+        inv_probe,
+        "POST",
+        "/invoices",
+        {
+            "type": "invoice",
+            "draft": "1",
+            "currency": "INR",
+            "description": "Winback probe - draft, never issued",
+            "customer": {
+                "name": "Winback Probe",
+                "contact": "9000090000",
+                "email": f"winback.probe.inv.{stamp}@example.com",
+            },
+            "line_items": [
+                {
+                    "name": "Winback probe line item",
+                    "amount": 49900,
+                    "currency": "INR",
+                    "quantity": 1,
+                }
+            ],
+            "sms_notify": 0,
+            "email_notify": 0,
         },
-        "line_items": [{
-            "name": "Winback probe line item", "amount": 49900,
-            "currency": "INR", "quantity": 1,
-        }],
-        "sms_notify": 0, "email_notify": 0,
-    })
+    )
     if not inv_probe.usable or not isinstance(invoice, dict):
         p.status, p.outcome = inv_probe.status, Outcome.INCONCLUSIVE
         p.note = f"could not create the draft invoice to ask about: {_error_text(invoice)}"
@@ -324,7 +388,9 @@ def probe_remote_mcp(key_id: str, secret: str) -> Probe:
     remote = Probe(1, "Remote MCP handshake (mcp.razorpay.com)")
     token = base64.b64encode(f"{key_id}:{secret}".encode()).decode()
     payload = {
-        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
         "params": {
             "protocolVersion": "2024-11-05",
             "capabilities": {},
@@ -361,17 +427,24 @@ def _local_mcp_tools(
     the tool surface.
     """
     env_args: list[str] = ["-e", "RAZORPAY_KEY_ID", "-e", "RAZORPAY_KEY_SECRET"]
-    for name in (extra_env or {}):
+    for name in extra_env or {}:
         env_args += ["-e", name]
 
-    child_env = os.environ | {
-        "RAZORPAY_KEY_ID": key_id, "RAZORPAY_KEY_SECRET": secret
-    } | (extra_env or {})
+    child_env = (
+        os.environ | {"RAZORPAY_KEY_ID": key_id, "RAZORPAY_KEY_SECRET": secret} | (extra_env or {})
+    )
 
     requests = [
-        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
-            "protocolVersion": "2024-11-05", "capabilities": {},
-            "clientInfo": {"name": "winback-probe", "version": "0.1.0"}}},
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "winback-probe", "version": "0.1.0"},
+            },
+        },
         {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
     ]
@@ -383,8 +456,12 @@ def _local_mcp_tools(
         # command line, so they never appear in `ps` or in a shell history.
         completed = subprocess.run(  # noqa: S603
             ["docker", "run", "--rm", "-i", *env_args, MCP_IMAGE],  # noqa: S607
-            input=stdin, capture_output=True, text=True,
-            timeout=MCP_STARTUP_TIMEOUT, env=child_env, check=False,
+            input=stdin,
+            capture_output=True,
+            text=True,
+            timeout=MCP_STARTUP_TIMEOUT,
+            env=child_env,
+            check=False,
         )
     except FileNotFoundError:
         return [], "docker is not on PATH"
@@ -419,17 +496,24 @@ def probe_local_mcp(key_id: str, secret: str) -> Probe:
         return p
 
     p.outcome = Outcome.PASS
-    restricted = sorted({
-        "create_refund", "close_qr_code", "create_instant_settlement",
-        "create_registration_link",
-    } & set(tools))
+    restricted = sorted(
+        {
+            "create_refund",
+            "close_qr_code",
+            "create_instant_settlement",
+            "create_registration_link",
+        }
+        & set(tools)
+    )
     # The question the build plan actually needs answered: the plan assumed
     # `create_registration_link` was available locally and would be the real action
     # for a dead mandate. Checked here rather than assumed, because discovering its
     # absence while wiring the adapter would be expensive.
-    mandate_tools = [t for t in tools if any(
-        word in t for word in ("regist", "mandate", "subscri", "recurring", "plan")
-    )]
+    mandate_tools = [
+        t
+        for t in tools
+        if any(word in t for word in ("regist", "mandate", "subscri", "recurring", "plan"))
+    ]
     p.note = (
         f"{len(tools)} tools over stdio; remote-restricted tools present locally: "
         f"{restricted or 'none'}; mandate/registration tools: "
@@ -440,9 +524,7 @@ def probe_local_mcp(key_id: str, secret: str) -> Probe:
 
 def probe_toolset_flags(key_id: str, secret: str, baseline: Probe) -> Probe:
     """Probe 11: whether ``TOOLSETS`` / ``READ_ONLY`` actually narrow the surface."""
-    p = Probe(
-        11, "TOOLSETS / READ_ONLY narrow the local tool surface", channel="docker stdio"
-    )
+    p = Probe(11, "TOOLSETS / READ_ONLY narrow the local tool surface", channel="docker stdio")
     if not baseline.usable:
         p.note = "depends on probe 2, which did not complete"
         return p
@@ -501,10 +583,7 @@ def main() -> int:
         tally[probe.outcome] += 1
 
     print("\n" + "=" * 76)
-    print(
-        "  ".join(f"{outcome}={tally[outcome]}" for outcome in Outcome)
-        + f"  (of {len(probes)})"
-    )
+    print("  ".join(f"{outcome}={tally[outcome]}" for outcome in Outcome) + f"  (of {len(probes)})")
     print(
         f"{sum(1 for p in probes if p.usable)} capabilities are cleared for the live "
         "lane. Record verbatim in docs/LIVE_LANE_FINDINGS.md."

@@ -75,20 +75,45 @@ def _reliability_panel(ax, observed: Metrics, censored: Metrics) -> None:
         ax.scatter(
             [x for x, t in zip(xs, thin, strict=True) if not t],
             [y for y, t in zip(ys, thin, strict=True) if not t],
-            s=42, color=color, edgecolor="white", linewidth=2.0, zorder=4,
+            s=42,
+            color=color,
+            edgecolor="white",
+            linewidth=2.0,
+            zorder=4,
         )
         ax.scatter(
             [x for x, t in zip(xs, thin, strict=True) if t],
             [y for y, t in zip(ys, thin, strict=True) if t],
-            s=42, facecolor="white", edgecolor=color, linewidth=2.0, zorder=4,
+            s=42,
+            facecolor="white",
+            edgecolor=color,
+            linewidth=2.0,
+            zorder=4,
         )
 
-    ax.plot([], [], color=OBSERVED, linewidth=2.0,
-            label=f"observed  n={observed.n:,d}  ECE {observed.ece:.3f}")
-    ax.plot([], [], color=CENSORED, linewidth=2.0,
-            label=f"censored  n={censored.n:,d}  ECE {censored.ece:.3f}")
-    ax.scatter([], [], s=42, facecolor="white", edgecolor=MUTED, linewidth=2.0,
-               label="bin holds fewer than 20 attempts")
+    ax.plot(
+        [],
+        [],
+        color=OBSERVED,
+        linewidth=2.0,
+        label=f"observed  n={observed.n:,d}  ECE {observed.ece:.3f}",
+    )
+    ax.plot(
+        [],
+        [],
+        color=CENSORED,
+        linewidth=2.0,
+        label=f"censored  n={censored.n:,d}  ECE {censored.ece:.3f}",
+    )
+    ax.scatter(
+        [],
+        [],
+        s=42,
+        facecolor="white",
+        edgecolor=MUTED,
+        linewidth=2.0,
+        label="bin holds fewer than 20 attempts",
+    )
     ax.legend(loc="lower right", handlelength=1.6)
 
     ax.set_xlim(0, 1)
@@ -114,8 +139,7 @@ def _calibrator_panel(ax, report: CalibrationReport) -> None:
     """
     rows = [("uncalibrated", report.uncalibrated.ece, None, True)]
     rows += [
-        (c.method, c.out_of_fold.ece, c.in_sample.ece, c.admissible)
-        for c in report.candidates
+        (c.method, c.out_of_fold.ece, c.in_sample.ece, c.admissible) for c in report.candidates
     ]
     rows.sort(key=lambda r: r[1], reverse=True)
 
@@ -124,7 +148,10 @@ def _calibrator_panel(ax, report: CalibrationReport) -> None:
         # A disqualified calibrator is drawn hollow rather than dropped. Its ECE is the
         # lowest on the panel, and a reader who cannot see that will wonder why it lost.
         ax.barh(
-            y, ece, height=0.62, zorder=2,
+            y,
+            ece,
+            height=0.62,
+            zorder=2,
             color=CALIBRATOR_RAMP[name] if ok else "white",
             edgecolor=CALIBRATOR_RAMP[name] if ok else DISQUALIFIED,
             linewidth=0 if ok else 1.6,
@@ -132,8 +159,11 @@ def _calibrator_panel(ax, report: CalibrationReport) -> None:
         )
         if in_sample is not None:
             ax.plot(
-                [in_sample, in_sample], [y - 0.34, y + 0.34],
-                color=INK, linewidth=1.6, zorder=4,
+                [in_sample, in_sample],
+                [y - 0.34, y + 0.34],
+                color=INK,
+                linewidth=1.6,
+                zorder=4,
             )
         # Plain ASCII: the figure renders in Helvetica Neue, which has no arrow and no
         # set-membership glyph, and matplotlib substitutes a tofu box rather than
@@ -216,7 +246,11 @@ def calibration_chart(
 
     fig.suptitle(
         "Winback — model v1 calibration",
-        x=0.008, y=0.985, ha="left", fontsize=12.5, color=INK,
+        x=0.008,
+        y=0.985,
+        ha="left",
+        fontsize=12.5,
+        color=INK,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.955))
     path.parent.mkdir(parents=True, exist_ok=True)

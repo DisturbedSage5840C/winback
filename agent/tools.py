@@ -124,6 +124,7 @@ def permitted_tools(execution_mode: str) -> tuple[str, ...]:
         return (*ALLOWED_TOOLS, *RAZORPAY_READ_TOOLS)
     return ALLOWED_TOOLS
 
+
 #: Built-in tools the batch has no business touching. A recovery agent that could read
 #: the filesystem or run a shell could reach the model artifacts, the ``.env`` file and
 #: the audit database directly — around every control in this package.

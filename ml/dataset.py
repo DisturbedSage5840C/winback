@@ -178,9 +178,7 @@ class Splits:
         ]
         for name in ("train", "calibrate", "test", "censored_calibrate", "censored_test"):
             m: Matrix = getattr(self, name)
-            lines.append(
-                f"{name:20}{len(m):8,d}{int(m.y.sum()):10,d}{m.positive_rate:8.1%}"
-            )
+            lines.append(f"{name:20}{len(m):8,d}{int(m.y.sum()):10,d}{m.positive_rate:8.1%}")
         return "\n".join(lines)
 
 
@@ -191,9 +189,7 @@ def build_splits(dataset: Dataset) -> Splits:
         train=build_matrix(dataset, cohort="train", rates=rates),
         calibrate=build_matrix(dataset, cohort="calibrate", rates=rates),
         test=build_matrix(dataset, cohort="test", rates=rates),
-        censored_calibrate=build_matrix(
-            dataset, cohort="calibrate", rates=rates, observed=False
-        ),
+        censored_calibrate=build_matrix(dataset, cohort="calibrate", rates=rates, observed=False),
         censored_test=build_matrix(dataset, cohort="test", rates=rates, observed=False),
         rates=rates,
     )

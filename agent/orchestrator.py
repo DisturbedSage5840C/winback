@@ -450,8 +450,10 @@ async def run_batch(
         # `lane.demotions`, but a run that was configured for `local` and mounted nothing
         # owes the reader the reason.
         if settings.mcp_mode != "off" and lane.mode == "off" and not lane.degraded:
-            print(f"  (.env asks for mcp:{settings.mcp_mode}; no Razorpay tool is "
-                  f"permitted on the {settings.execution_mode} lane, so none is mounted)")
+            print(
+                f"  (.env asks for mcp:{settings.mcp_mode}; no Razorpay tool is "
+                f"permitted on the {settings.execution_mode} lane, so none is mounted)"
+            )
         if done:
             print(f"resuming: {len(done)} already concluded, {len(pending)} to work")
         print(f"executor: {bench.adapter.mode} · model {settings.agent_model}")
@@ -494,9 +496,11 @@ async def run_batch(
                     requested=lane.requested,
                     mode=probed.mode,
                     servers=probed.servers,
-                    demotions=[*lane.demotions,
-                               f"{lane.mode} failed at {invoice_id} — {type(exc).__name__}",
-                               *probed.demotions],
+                    demotions=[
+                        *lane.demotions,
+                        f"{lane.mode} failed at {invoice_id} — {type(exc).__name__}",
+                        *probed.demotions,
+                    ],
                 )
                 options = _options(bench, writer, settings, lane)
                 writer.record_degradation(invoice_id, lane.demotions[-1], lane.mode)

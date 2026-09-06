@@ -92,9 +92,7 @@ def test_each_entity_is_seeded_on_itself_not_on_call_order(dataset: Dataset) -> 
     # the split is by time across everyone who exists, so the earliest 40 mandates
     # are all "train" on their own and spread across three cohorts in the full run.
     without_cohort = [replace(row, cohort="") for row in small.subscriptions]
-    assert without_cohort == [
-        replace(row, cohort="") for row in dataset.subscriptions[:40]
-    ]
+    assert without_cohort == [replace(row, cohort="") for row in dataset.subscriptions[:40]]
 
 
 # ------------------------------------------------------- the censoring is honest
@@ -126,9 +124,7 @@ def test_censored_invoices_really_do_contain_captures(dataset: Dataset) -> None:
     that gap between what was observed and what was recoverable is the thing the
     model has to generalise into.
     """
-    shadow_captures = sum(
-        1 for a in dataset.attempts if not a.observed and a.outcome == "captured"
-    )
+    shadow_captures = sum(1 for a in dataset.attempts if not a.observed and a.outcome == "captured")
     assert shadow_captures > 0
 
 
@@ -288,9 +284,7 @@ def test_dunning_stops_at_the_first_capture(
     """No policy retries an invoice it has already collected. A row after a capture
     would be a burned legal attempt that never existed."""
     for invoice_id, attempts in by_invoice.items():
-        observed = sorted(
-            (a for a in attempts if a.observed), key=lambda a: a.attempt_number
-        )
+        observed = sorted((a for a in attempts if a.observed), key=lambda a: a.attempt_number)
         outcomes = [a.outcome for a in observed]
         if "captured" in outcomes:
             assert outcomes.index("captured") == len(outcomes) - 1, invoice_id
@@ -309,9 +303,7 @@ def test_the_shadow_schedule_stops_at_the_first_capture_too(
     as if they were evidence about one that does.
     """
     for invoice_id, attempts in by_invoice.items():
-        shadow = sorted(
-            (a for a in attempts if not a.observed), key=lambda a: a.attempt_number
-        )
+        shadow = sorted((a for a in attempts if not a.observed), key=lambda a: a.attempt_number)
         outcomes = [a.outcome for a in shadow]
         if "captured" in outcomes:
             assert outcomes.index("captured") == len(outcomes) - 1, invoice_id
@@ -505,9 +497,7 @@ def test_the_summary_reports_what_the_documents_quote(dataset: Dataset) -> None:
     summary = dataset.summary()
     assert summary["fingerprint"] == FROZEN_FINGERPRINT
     assert summary["dataset_version"] == generate.DATASET_VERSION
-    assert summary["attempts_observed"] + summary["attempts_censored"] == len(
-        dataset.attempts
-    )
+    assert summary["attempts_observed"] + summary["attempts_censored"] == len(dataset.attempts)
     assert 0.0 < summary["censoring_rate"] < 0.5  # type: ignore[operator]
 
 

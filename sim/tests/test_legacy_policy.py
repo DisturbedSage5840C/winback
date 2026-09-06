@@ -169,9 +169,7 @@ def test_one_violated_rule_is_reported_once_per_offending_attempt() -> None:
     ],
     ids=["standard", "urgent"],
 )
-def test_no_branch_can_exceed_the_npci_attempt_cap(
-    params: LegacyParams, amount: int
-) -> None:
+def test_no_branch_can_exceed_the_npci_attempt_cap(params: LegacyParams, amount: int) -> None:
     """``payment_attempts.attempt_number`` is CHECKed to 1..4.
 
     The legacy policy does not know about the cap, but the table it writes into

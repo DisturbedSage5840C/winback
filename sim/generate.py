@@ -147,8 +147,18 @@ CONSENT_MIX: tuple[tuple[str, float], ...] = (
 #: what isolates arm C's violations to the legacy urgent branch, where the story
 #: says they are.
 PRESENTMENT_HOURS: tuple[tuple[int, float], ...] = (
-    (1, 0.14), (2, 0.16), (3, 0.14), (4, 0.11), (5, 0.09), (6, 0.08),
-    (7, 0.06), (8, 0.05), (9, 0.05), (14, 0.05), (15, 0.04), (22, 0.03),
+    (1, 0.14),
+    (2, 0.16),
+    (3, 0.14),
+    (4, 0.11),
+    (5, 0.09),
+    (6, 0.08),
+    (7, 0.06),
+    (8, 0.05),
+    (9, 0.05),
+    (14, 0.05),
+    (15, 0.04),
+    (22, 0.03),
 )
 
 #: Median multiple of the debit amount that a customer can spare per month for
@@ -375,9 +385,7 @@ def _build_subscription(index: int, customer: CustomerRow) -> tuple[Subscription
 
     # Log-uniform within the category: subscription prices cluster at the cheap end
     # of any tier, and a uniform draw would over-populate the top of every band.
-    amount_paise = paise(
-        round(math.exp(rng.uniform(math.log(low_rupees), math.log(high_rupees))))
-    )
+    amount_paise = paise(round(math.exp(rng.uniform(math.log(low_rupees), math.log(high_rupees)))))
 
     headroom_multiple = rng.lognormvariate(
         math.log(HEADROOM_MULTIPLE_MEDIAN), HEADROOM_MULTIPLE_SIGMA
@@ -402,7 +410,7 @@ def _build_subscription(index: int, customer: CustomerRow) -> tuple[Subscription
             paid_count=0,
             remaining_count=total_count,
             cohort="train",  # revised once every mandate start is known
-            ),
+        ),
         headroom_paise,
     )
 
@@ -439,9 +447,9 @@ def _presentment(subscription: SubscriptionRow, cycle_number: int) -> datetime:
     """When cycle N is presented. Fixed hour per subscription, monthly cadence."""
     rng = _rng("presentment", subscription.subscription_id)
     hour = _pick(rng, PRESENTMENT_HOURS)
-    first = datetime.combine(
-        subscription.mandate_start, datetime.min.time(), tzinfo=IST
-    ).replace(hour=hour)
+    first = datetime.combine(subscription.mandate_start, datetime.min.time(), tzinfo=IST).replace(
+        hour=hour
+    )
     return _add_months(first, cycle_number - 1)
 
 
@@ -511,8 +519,13 @@ def _walk_subscription(
         monthly_headroom_paise=customer_row.monthly_headroom_paise,
     )
     censored_because = censoring_reason(
-        Mandate(subscription.subscription_id, subscription.method, subscription.bank,
-                subscription.amount_paise, 0),
+        Mandate(
+            subscription.subscription_id,
+            subscription.method,
+            subscription.bank,
+            subscription.amount_paise,
+            0,
+        ),
         legacy,
     )
 
@@ -757,9 +770,7 @@ def build_dataset(
                     **asdict(subscription),
                     "status": status,
                     "paid_count": history.paid_count,
-                    "remaining_count": max(
-                        0, subscription.remaining_count - history.paid_count
-                    ),
+                    "remaining_count": max(0, subscription.remaining_count - history.paid_count),
                     "cohort": cohorts[subscription.subscription_id],
                 }  # type: ignore[arg-type]
             )
@@ -778,12 +789,8 @@ def build_dataset(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--load", action="store_true", help="write the dataset into Postgres"
-    )
-    parser.add_argument(
-        "-n", "--subscriptions", type=int, default=N_SUBSCRIPTIONS
-    )
+    parser.add_argument("--load", action="store_true", help="write the dataset into Postgres")
+    parser.add_argument("-n", "--subscriptions", type=int, default=N_SUBSCRIPTIONS)
     args = parser.parse_args()
 
     dataset = build_dataset(args.subscriptions)
@@ -809,9 +816,7 @@ def main() -> None:
         f"   recovered {summary['invoices_recovered']:,}"
         f"   written off {summary['invoices_written_off']:,}"
     )
-    at_risk = sum(
-        i.amount_paise for i in dataset.invoices if i.status == "at_risk"
-    )
+    at_risk = sum(i.amount_paise for i in dataset.invoices if i.status == "at_risk")
     print(f"  revenue at risk       {format_rupees(at_risk)}")
 
     if args.load:

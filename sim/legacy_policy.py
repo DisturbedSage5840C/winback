@@ -114,9 +114,7 @@ class ScheduledRetry:
         return not is_non_peak(self.execute_at)
 
 
-def censoring_reason(
-    mandate: Mandate, params: LegacyParams = DEFAULT_LEGACY
-) -> str | None:
+def censoring_reason(mandate: Mandate, params: LegacyParams = DEFAULT_LEGACY) -> str | None:
     """Why this mandate's retry outcomes were never observed, or ``None`` if they were.
 
     Checked in the order the legacy job checked them, so the reason recorded is the
@@ -142,9 +140,7 @@ def _at_hour(day: datetime, clock: time) -> datetime:
     reproducing its clock.
     """
     local = day.astimezone(IST)
-    return local.replace(
-        hour=clock.hour, minute=clock.minute, second=0, microsecond=0
-    )
+    return local.replace(hour=clock.hour, minute=clock.minute, second=0, microsecond=0)
 
 
 def retry_schedule(
@@ -232,6 +228,4 @@ def violations(
     # The cap is not checked here: retry_schedule refuses to build a schedule that
     # exceeds it, so an over-cap legacy run is a programming error rather than a
     # compliance finding. The window is the rule this policy actually breaks.
-    return tuple(
-        "peak_window" for retry in schedule if retry.in_peak_window
-    )
+    return tuple("peak_window" for retry in schedule if retry.in_peak_window)

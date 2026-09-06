@@ -36,7 +36,7 @@ class Claim:
 
 def _actual_test_count() -> int:
     """Sum pytest's own per-file collection counts — the only total it prints."""
-    result = subprocess.run(
+    result = subprocess.run(  # noqa: S603 — fixed argv, no untrusted input
         [sys.executable, "-m", "pytest", "--collect-only", "-q"],
         cwd=ROOT,
         capture_output=True,
@@ -57,7 +57,7 @@ def _actual_what_broke_entries() -> int:
 
 def _actual_endpoint_count() -> int:
     text = (ROOT / "api" / "main.py").read_text()
-    return len(re.findall(r'^@app\.get\(', text, flags=re.MULTILINE))
+    return len(re.findall(r"^@app\.get\(", text, flags=re.MULTILINE))
 
 
 def _actual_subscription_count() -> int:
@@ -118,9 +118,7 @@ def main() -> int:
         actual = cache[claim.label]
 
         if claimed != actual:
-            mismatches.append(
-                f"{claim.doc}: claims {claim.label} = {claimed}, tree says {actual}"
-            )
+            mismatches.append(f"{claim.doc}: claims {claim.label} = {claimed}, tree says {actual}")
 
     if missing:
         print("check_docs: could not find the claim to check (doc drifted more than expected):")

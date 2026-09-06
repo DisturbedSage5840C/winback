@@ -23,11 +23,6 @@ jobs:
           POSTGRES_PASSWORD: winback_dev
         ports:
           - 55432:5432
-        # Mirrors docker-compose.yml exactly: the same three .sql files load into the
-        # same empty volume the same way, so "works in CI" and "works with
-        # scripts/bootstrap.sh" are the same claim.
-        volumes:
-          - ${{ github.workspace }}/db:/docker-entrypoint-initdb.d:ro
         options: >-
           --health-cmd "pg_isready -U winback_owner -d winback"
           --health-interval 3s
@@ -53,12 +48,25 @@ jobs:
       - name: ruff format --check
         run: python -m ruff format --check .
 
+      - name: Apply schema
+        # docker-compose.yml gets the three .sql files into a fresh Postgres via
+        # /docker-entrypoint-initdb.d, but that only works because the files exist on
+        # disk before the container starts. Here the `postgres` service container is
+        # created during "Initialize containers", which runs *before* actions/checkout
+        # — so a `volumes:` mount of ${{ github.workspace }}/db on the service binds an
+        # empty directory. Loading the same three files explicitly, in the same order,
+        # once the checkout has actually happened, is the fix. ubuntu-latest ships
+        # postgresql-client, so this talks to the service container over the mapped
+        # host port with no docker exec needed.
+        env:
+          PGPASSWORD: winback_dev
+        run: |
+          for f in db/*.sql; do
+            echo "applying $f"
+            psql -h localhost -p 55432 -U winback_owner -d winback -v ON_ERROR_STOP=1 -f "$f"
+          done
+
       - name: Confirm the schema loaded
-        # ubuntu-latest ships the postgresql-client package, so this talks to the
-        # service container over the mapped host port -- no docker exec needed. The
-        # init scripts only run against an empty volume (see scripts/bootstrap.sh),
-        # so this is the same "found N tables, expected 11" check bootstrap.sh makes
-        # locally, applied to the CI service container.
         env:
           PGPASSWORD: winback_dev
         run: |

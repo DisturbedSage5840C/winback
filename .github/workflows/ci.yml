@@ -1,0 +1,104 @@
+name: CI
+
+# The project's own anti-drift mechanisms (eval.report --check, the frozen-model
+# golden fixture, scripts/check_docs.py) existed before this workflow did and ran
+# only by hand — see docs/WHAT_BROKE.md, "pyproject.toml's testpaths omitted api."
+# This binds them to every push instead.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: winback
+          POSTGRES_USER: winback_owner
+          POSTGRES_PASSWORD: winback_dev
+        ports:
+          - 55432:5432
+        # Mirrors docker-compose.yml exactly: the same three .sql files load into the
+        # same empty volume the same way, so "works in CI" and "works with
+        # scripts/bootstrap.sh" are the same claim.
+        volumes:
+          - ${{ github.workspace }}/db:/docker-entrypoint-initdb.d:ro
+        options: >-
+          --health-cmd "pg_isready -U winback_owner -d winback"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: pip install --quiet -r requirements.txt
+
+      - name: Create .env
+        run: cp .env.example .env
+
+      - name: ruff check
+        run: python -m ruff check .
+
+      - name: ruff format --check
+        run: python -m ruff format --check .
+
+      - name: Confirm the schema loaded
+        # ubuntu-latest ships the postgresql-client package, so this talks to the
+        # service container over the mapped host port -- no docker exec needed. The
+        # init scripts only run against an empty volume (see scripts/bootstrap.sh),
+        # so this is the same "found N tables, expected 11" check bootstrap.sh makes
+        # locally, applied to the CI service container.
+        env:
+          PGPASSWORD: winback_dev
+        run: |
+          COUNT=$(psql -h localhost -p 55432 -U winback_owner -d winback -tAc \
+            "SELECT count(*) FROM pg_tables WHERE schemaname='public'")
+          [ "$COUNT" -eq 11 ] || { echo "expected 11 tables, found $COUNT"; exit 1; }
+
+      - name: Load the frozen world (v1)
+        run: python -m sim.generate --load
+
+      - name: pytest
+        run: python -m pytest
+
+      - name: Populate eval runs against the committed model
+        run: python -m eval
+
+      - name: eval.report --check
+        run: python -m eval.report --check
+
+      - name: check_docs
+        run: python -m scripts.check_docs
+
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: npm install
+        run: npm install
+
+      - name: typecheck
+        run: npm run typecheck
+
+      - name: build
+        run: npm run build

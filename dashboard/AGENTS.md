@@ -71,4 +71,5 @@ throughout and must stay that way.
 
 ## Checks
 
-`npm run build` must exit clean. `npm run format` runs oxfmt.
+`npm run build` and `npm run typecheck` (`tsc --noEmit`) must both exit clean — CI
+gates on both. `npm run format` runs oxfmt.

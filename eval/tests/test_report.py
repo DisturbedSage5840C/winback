@@ -22,6 +22,11 @@ from eval.counterfactual import EvalRun
 from eval.persist import load_arms, load_intervals, load_run, load_violations, save
 from eval.tests.conftest import TEST_RUN_ID
 
+#: Every test here goes through the `persisted` fixture or `agent_connection` directly,
+#: so this whole module needs Postgres — same reasoning as `api/tests/test_main.py` and
+#: `core/tests/test_append_only.py`.
+pytestmark = pytest.mark.db
+
 #: Enough resamples for an interval to exist; far fewer than the report's 10,000, because
 #: nothing here asserts on the width of one.
 RESAMPLES = 200

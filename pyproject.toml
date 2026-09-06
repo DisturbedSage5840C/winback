@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 [tool.pytest.ini_options]
 # rootdir-relative imports: `from core.db import ...` resolves without installing.
 pythonpath = ["."]
-testpaths = ["core", "compliance", "sim", "ml", "eval", "agent"]
+testpaths = ["core", "compliance", "sim", "ml", "eval", "agent", "api"]
 addopts = "-q --strict-markers"
 markers = [
     "db: requires the Postgres container (docker compose up -d)",

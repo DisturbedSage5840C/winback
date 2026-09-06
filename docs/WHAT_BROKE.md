@@ -1593,6 +1593,35 @@ radius, not to the plan's edit list.
 
 ---
 
+## 2026-09-06 · `pyproject.toml`'s `testpaths` omitted `api`, so its tests never ran by default
+
+**Believed.** `[tool.pytest.ini_options] testpaths` listed every package with a `tests/`
+directory, so a bare `pytest` exercised the whole tree, and the 29 tests under
+`api/tests/` — including the ones written for `/model/importances` and `/config` — were
+part of that number.
+
+**Actually true.** `testpaths` read `["core", "compliance", "sim", "ml", "eval",
+"agent"]` — `api` was never in the list. A bare `pytest` silently collected and ran
+616 tests and reported them as the whole suite, while `api/tests/test_main.py`'s 29
+tests only ran if someone passed `api` explicitly on the command line. `api/main.py`
+scored **0% coverage** on the default run despite being fully tested when invoked
+directly. `docs/IMPROVEMENTS_LOG.md`'s first entry cites a "612 → 617" jump from adding
+the `/model/importances` endpoint's tests — a delta that was never reproducible under a
+bare `pytest`, because the five new tests it describes lived in the package that was
+never collected.
+
+**Cost.** Nothing broke, because nothing in `api/` was itself broken — this was a gap in
+what the suite *claimed* to cover, not in what it covered when asked. The cost was
+entirely credibility: a submission touting "N tests passing" while silently excluding
+the one package that is the read surface a judge's dashboard actually depends on.
+
+**Changed.** Added `"api"` to `testpaths`. The suite now collects 645 tests by default
+(616 → 645), matching what `pytest api` alone already produced. Corrected the stale
+"612 → 617" claim in `IMPROVEMENTS_LOG.md` to point back at this entry instead of
+implying a count no bare `pytest` run ever produced.
+
+---
+
 ## Open
 
 - ~~**`batch_v2` is 75/190 and resuming.**~~ **Closed — it finished, and this line was

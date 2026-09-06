@@ -20,9 +20,13 @@ sorts by gain share descending, and returns the top N (`?top=`, default 12, max 
 **Verified.** Added `test_model_importances_are_read_from_the_training_artifact_sorted_by_gain`
 and `test_model_importances_caps_at_the_frozen_feature_count` to `api/tests/test_main.py`,
 asserting the response is sorted descending, the shares sum to ≤ 1.0, and `top` is bounded
-by `Query(..., le=27)`. Full suite green (612 → 617 passing), `ruff check .` clean. Does not
-read `ml/artifacts/model_v1.json` or `calibrator_v1.joblib`, and computes nothing — it sorts
-and slices a dict that was already on disk.
+by `Query(..., le=27)`. `api/tests` passed at the time against a `testpaths` override that
+included it — `pyproject.toml` itself did not list `api` yet, so the "612 → 617" this entry
+originally cited was never reproducible under a bare `pytest`; corrected here rather than
+left to mislead (see [`WHAT_BROKE.md`](WHAT_BROKE.md), "`pyproject.toml`'s `testpaths`
+omitted `api`, so its tests never ran by default"). `ruff check .`
+clean. Does not read `ml/artifacts/model_v1.json` or `calibrator_v1.joblib`, and computes
+nothing — it sorts and slices a dict that was already on disk.
 
 ## 2026-09-04 · `Cache-Control` on the endpoints that describe frozen data
 

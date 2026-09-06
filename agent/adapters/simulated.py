@@ -1,6 +1,6 @@
 """The executor that asks the oracle instead of the rail.
 
-This is the lane the 500-subscription batch runs on, and it is the only lane in which
+This is the lane the 4,000-subscription batch runs on, and it is the only lane in which
 "measured money recovered" is a measurement rather than a figure of speech. Test-mode
 Razorpay moves no money; a real merchant account would move money that nobody involved
 is entitled to spend on a hackathon. The seeded counterfactual world in ``sim.world``

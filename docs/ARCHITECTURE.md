@@ -43,7 +43,7 @@ is the only thing that varies:
 
 | | `LiveRazorpayAdapter` | `SimulatedAdapter` |
 |---|---|---|
-| Scope | Live cohort, ~10–20 subscriptions | Full batch, 500 subscriptions |
+| Scope | Live cohort, ~10–20 subscriptions | Full batch, 4,000 subscriptions |
 | Backing | Real Razorpay test-mode API | Seeded counterfactual oracle |
 | Produces | Real `plink_…` / `order_…` / `pay_…` IDs | Deterministic outcomes |
 | Answers | "Does this work against the real API?" | "How much money did the policy recover?" |
@@ -125,7 +125,7 @@ allowed to move money" is answerable from the database, not only from the code.
 
 ## 05 — The read API
 
-FastAPI over `winback_reader`. Ten endpoints, all `GET`, and a test asserts that the
+FastAPI over `winback_reader`. 13 endpoints, all `GET`, and a test asserts that the
 set of HTTP verbs the app exposes is a subset of `{GET, HEAD}` — the grant is the
 enforcement, that test is the cheap second lock.
 

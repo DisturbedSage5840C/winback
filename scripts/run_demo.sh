@@ -96,7 +96,7 @@ if (( RESEED )) || (( INVOICES == 0 )); then
   if (( RESEED )) && (( INVOICES > 0 )); then
     say "--reseed: dropping the existing world and audit trail"
   fi
-  say "generating the frozen dataset (500 subscriptions, seeded — same numbers every time)"
+  say "generating the frozen dataset (4,000 subscriptions, seeded — same numbers every time)"
   "$PY" -m sim.generate --load
 else
   ok "dataset already loaded — $INVOICES invoices (pass --reseed to rebuild)"

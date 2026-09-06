@@ -7,7 +7,7 @@
 > bottom is a master prompt — paste it into a fresh Claude Code session pointed at this
 > repo and it builds the whole thing.
 >
-> **No mocks anywhere.** Every number on every page comes from one of the ten endpoints
+> **No mocks anywhere.** Every number on every page comes from one of the 13 endpoints
 > in `api/main.py`, running against Postgres. If a page cannot get a real number for
 > something, it says so or omits it — it never invents one.
 
@@ -37,7 +37,7 @@ thesis without a word of narration. Build toward that scene first if time runs s
 | Styling | Tailwind CSS v4 (CSS-first config, no `tailwind.config.js`) | fastest path to the exact palette below with zero abstraction tax |
 | Charts | Recharts | funnel bars, calibration reliability diagram, four-arm comparison — all standard chart shapes it does natively |
 | Motion | Framer Motion (`motion` package) | the four animations in §06; respects `prefers-reduced-motion` everywhere |
-| Data fetching | native `fetch` against the FastAPI base URL, `VITE_API_BASE` (defaults to `http://localhost:8000`) | no client library needed — ten endpoints, all `GET`, no auth |
+| Data fetching | native `fetch` against the FastAPI base URL, `VITE_API_BASE` (defaults to `http://localhost:8000`) | no client library needed — 13 endpoints, all `GET`, no auth |
 | Live updates | polling `GET /runs/{id}/events?since=<cursor>` every 1.5s while a run page is open | see §07; no websocket exists on the backend and none should be built for this |
 | Fonts | Satoshi (Fontshare) for display + UI, `Manrope, system-ui` fallback stack | matches the buildathon micro-site's own type, per the plan |
 | State | local `useState` + a small `useAsync` hook; no Redux/Zustand — the app has no client state worth a store | keep it simple, nothing here needs global state |
@@ -47,7 +47,7 @@ to describe what actually shipped. The dashboard was scaffolded from a Figma Mak
 which is a Vite + React SPA, and porting it to the App Router would have cost most of a
 day to buy nothing this app uses: there is no SEO surface, no server-side secret, no
 mutation, and no route that benefits from RSC — every page is an authenticated-by-nobody
-read of ten `GET` endpoints on a FastAPI backend that must be running anyway. `HashRouter`
+read of 13 `GET` endpoints on a FastAPI backend that must be running anyway. `HashRouter`
 is deliberate for the same reason: the built `dist/` is a pile of static files that opens
 correctly from `file://` or any static host with no rewrite rules to configure, which
 matters more for a judge cloning the repo than clean URLs do. Everything else in this

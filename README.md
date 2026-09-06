@@ -88,8 +88,8 @@ it today would believe it works.
 ## 05 — Status
 
 Complete through **Day 10 of 10** (26 Aug → 5 Sep 2026), tagged
-[**v1.0.1**](https://github.com/DisturbedSage5840C/winback/releases/tag/v1.0.1).
-**612 tests passing, 99% coverage on `compliance/`.**
+[**v1.0.2**](https://github.com/DisturbedSage5840C/winback/releases/tag/v1.0.2).
+**645 tests passing, 99% coverage on `compliance/`.**
 
 | | |
 |---|---|
@@ -148,7 +148,7 @@ about why "it works on my machine" is not a test.
 
 ## 07 — What broke
 
-[`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) has **43 entries**, written as they happened
+[`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) has **46 entries**, written as they happened
 rather than reconstructed at the end. Four worth reading, because they are the four
 kinds of mistake this project actually made:
 
@@ -205,8 +205,9 @@ Stated here rather than waiting to be asked.
 | [`docs/EVALUATION.md`](docs/EVALUATION.md) | Four-arm results, generated from the database |
 | [`docs/LIVE_LANE_FINDINGS.md`](docs/LIVE_LANE_FINDINGS.md) | What the Razorpay API actually permits |
 | [`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) | The failure log, written as it happened |
+| [`docs/IMPROVEMENTS_LOG.md`](docs/IMPROVEMENTS_LOG.md) | Post-submission audit findings and fixes, dated and sourced to file:line |
 | [`docs/FRONTEND_SPEC.md`](docs/FRONTEND_SPEC.md) | The dashboard contract — pages, endpoints, palette, motion budget |
-| [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) | The five-minute video, shot by shot, with what is deliberately not claimed |
+| [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) | The four-minute video script, conversational, every number pulled from the running system |
 | [`docs/SUBMISSION.md`](docs/SUBMISSION.md) | The submission pack — every figure the form asks for, each sourced to a file here |
 | [`docs/COMPLETION_REPORT.md`](docs/COMPLETION_REPORT.md) | Live build status against the ten-day plan — what is done, what is left, and who owns it |
 

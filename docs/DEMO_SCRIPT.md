@@ -22,7 +22,7 @@ Say something like:
 > retry however you want — there's a hard rule from NPCI: one attempt plus three
 > retries, and only during certain hours. Winback figures out, for every failed
 > payment, whether a retry is even legal, and if it is, when the best time to try
-> again is. It recovered about ₹3.57 lakh across 190 test invoices, without breaking
+> again is. It recovered about ₹6.4 lakh across 190 test invoices, without breaking
 > a single rule."
 
 Keep this short. No architecture diagram needed unless it helps you explain it —
@@ -55,7 +55,7 @@ Open the dashboard. Confirm the health badge is green before you start recording
 Show the summary numbers — recovered amount, how many were deferred, how many
 were blocked, how many failed. Say what they mean in plain words:
 
-> "This is one full batch of 190 failed payments. About ₹3.57 lakh got recovered
+> "This is one full batch of 190 failed payments. About ₹6.4 lakh got recovered
 > legally. Some were deferred because it wasn't the right time yet, some were
 > blocked because retrying them would've broken the rules."
 
@@ -93,7 +93,8 @@ one sentence, no need to dwell on it.
 > and never the illegal one. Built in [X] days, code's on GitHub, and the
 > dashboard you just saw is live."
 
-Show the repo URL or the live site URL one more time on screen and end there.
+Show the repo URL on screen one more time and end there — there is no separately
+deployed site to show; the dashboard in §3 is running locally.
 
 ## A few things to keep in mind while recording
 

@@ -177,7 +177,7 @@ Applied, given the results above.
 visible in the dashboard and in any exported audit trail rather than buried in a README.
 
 Live cohort: ~10–20 subscriptions carrying real `order_…` / `plink_…` / `cust_…` ids.
-The full 500-subscription batch runs simulated, because that is the only lane in which
+The full 4,000-subscription batch runs simulated, because that is the only lane in which
 a counterfactual is defined.
 
 ## 07 — Safety rails

@@ -147,7 +147,7 @@ Held-out cohort split **by `customer_id` AND by time** (train ≈60% earliest, c
 
 ## 4. Compliance layer — pure functions, TDD, zero LLM
 
-Reuse the exact structural pattern from `~/Documents/NeuroSynth/src/neurosynth/validation/gates.py` (`GateResult` / `GateDecision.to_dict()` / `ValidationGates.evaluate()`). The compliance guardrail is that same hard-gate/soft-gate machine applied to money instead of models — and `to_dict()` already gives you the audit row.
+Reuse the hard-gate/soft-gate machine shape from prior work (`GateResult` / `GateDecision.to_dict()` / `ValidationGates.evaluate()`): the compliance guardrail is that same pattern applied to money instead of models — and `to_dict()` already gives you the audit row.
 
 Write these **test-first** (`superpowers:test-driven-development`) — they are pure, boundary-heavy functions and are the credibility centrepiece:
 
@@ -175,10 +175,7 @@ The guardrail returns only `APPROVE`, `REDIRECT_TO_WINDOW`, `ESCALATE_HUMAN`, or
 
 **Decision policy:** for each at-risk invoice, enumerate legal `(action × next-3-valid-non-peak-slots)` candidates from the guardrail, score each, pick argmax of **expected ₹ net of action cost** under the remaining attempt budget. Cost matrix in rupees: FP = one burned legal attempt + messaging cost; FN = invoice × margin. Present the confusion matrix **in rupees**.
 
-**Reuse, don't rewrite:**
-- `_compute_ece(y_true, y_proba, n_bins=10)` — `~/Documents/RaceJudge/packages/ml/predictor.py:370`, copy directly.
-- `_PlattCalibrator` and the `evaluate()` metric-dict shape — `~/Documents/NeuroSynth/src/neurosynth/models/calibrated_ensemble.py:102` and `:625`.
-- Train/save/load/predict class shape — `~/Documents/RaceJudge/packages/ml/predictor.py:144`.
+**Reuse, don't rewrite:** the `_compute_ece(y_true, y_proba, n_bins=10)` shape, the Platt-calibrator and `evaluate()` metric-dict shape, and the train/save/load/predict class shape from prior calibration work — copy the patterns, not the files.
 
 ---
 

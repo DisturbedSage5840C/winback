@@ -190,7 +190,19 @@ class Workbench:
         return None
 
     def attempts_used(self, invoice_id: str) -> int:
-        """History plus what this batch has already spent. Never the agent's word for it."""
+        """History plus what this batch has already spent. Never the agent's word for it.
+
+        The ``1 +`` assumes exactly one prior attempt: correct for every case here,
+        because ``ReplayCase.base_history`` (``eval/counterfactual.py``) always strips
+        this invoice's own legacy retries down to the first charge before the agent
+        ever sees it. It is also resume-fragile — ``self.executions`` is this process's
+        own memory, so a crash and restart with the same ``run_id`` forgets whatever
+        this batch already spent before it died. ``compliance/npci_retry_cap.py``'s
+        ``attempts_used_for_invoice`` counts the same thing from ``payment_attempts``
+        instead, scoped by ``run_id``, and would survive a resume; it is not yet called
+        from here (tracked alongside the resumed-run ``decision_id`` collision, which
+        the same crash-and-restart path depends on being fixed first).
+        """
         spent = sum(
             1
             for row in self.executions

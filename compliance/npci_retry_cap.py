@@ -87,6 +87,16 @@ def attempts_used_for_invoice(
 
     A row without an ``invoice_id`` raises rather than being skipped: an uncounted
     attempt is an over-budget retry waiting to happen.
+
+    **Not yet wired to a caller.** ``agent/tools.py``'s ``Workbench.attempts_used``
+    is the function that actually feeds ``check()`` today, and it counts retries
+    from the batch's own in-memory ``executions`` list plus a hardcoded ``1`` for
+    the invoice's first charge — correct only because every case in the frozen
+    cohort starts from exactly one prior attempt, and fragile across a resumed run,
+    where the in-memory list restarts empty. This function is the DB-backed
+    replacement for that count, scoped by ``run_id`` for exactly the four-arm
+    evaluation harness reason described above; it is unit-tested here but not yet
+    called from ``Workbench.attempts_used``.
     """
     return sum(
         1

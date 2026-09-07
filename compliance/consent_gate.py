@@ -12,9 +12,16 @@ Source: TRAI's Telecom Commercial Communications Customer Preference Regulations
 Two questions, deliberately two functions:
 
 ``check_nudge``
-    May we message this customer *now*?
+    May we message this customer *now*? This is the one the live agent calls —
+    ``compliance/guardrail.py`` runs it for every ``NUDGE``, and a ``consent_withdrawn``
+    or ``dnd_registered`` denial ends that invoice's messaging for the run.
 ``may_request_reconsent``
     May we ask this customer to opt back in? Not within 90 days of a withdrawal.
+    Correctly implemented and tested, but **no caller invokes it** — this agent has
+    no re-solicitation flow, so a written-off customer stays written off rather than
+    being asked to opt back in once the cooloff passes. The function exists so that
+    flow can be built without re-deriving this rule; it does not describe anything
+    the current pipeline does.
 
 Collapsing them into one boolean is the mistake this module exists to prevent. A
 system that treats "cannot message" and "cannot ask again" as one state will
@@ -181,8 +188,11 @@ def may_request_reconsent(
 
     Distinct from ``check_nudge`` on purpose: a customer 91 days past a withdrawal
     may be invited to re-consent, and still must not be nudged about an invoice
-    until they actually say yes. This is the function that lets a written-off
-    account come back without letting a fresh opt-out be argued with.
+    until they actually say yes. This is the function that would let a written-off
+    account come back without letting a fresh opt-out be argued with — **if
+    something called it**. Nothing in this codebase runs a re-solicitation flow, so
+    this rule is enforced only by the tests in ``test_consent_gate.py``, not by any
+    live decision.
     """
     _require_aware(consent_updated_at, "consent_updated_at")
     _require_aware(now, "now")

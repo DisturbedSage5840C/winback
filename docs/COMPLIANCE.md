@@ -63,16 +63,20 @@ withdrawn consent may not be **re-solicited** for **90 days**.
 
 **Two questions, two functions — this is the load-bearing detail.**
 
-| Function | Question | Governs |
-|---|---|---|
-| `check_nudge(...)` | May we message this customer *now*? | consent status + the 7-day window |
-| `may_request_reconsent(...)` | May we *ask* them to opt back in? | the 90-day cooloff |
+| Function | Question | Governs | Called by the live agent? |
+|---|---|---|---|
+| `check_nudge(...)` | May we message this customer *now*? | consent status + the 7-day window | Yes — `compliance/guardrail.py` runs it on every `NUDGE` |
+| `may_request_reconsent(...)` | May we *ask* them to opt back in? | the 90-day cooloff | No |
 
 Collapsing these into one boolean is the mistake the module exists to prevent. A system
 that treats "cannot message" and "cannot ask again" as one state will either re-solicit
 someone who just opted out, or permanently write off a customer whose seven-day window
-merely lapsed. Ninety-one days after a withdrawal, a customer may be invited to
-re-consent — and still must not be nudged about an invoice until they actually say yes.
+merely lapsed. Ninety-one days after a withdrawal, a customer *may* be invited to
+re-consent under this rule — but nothing in this agent currently runs a re-solicitation
+flow, so a written-off customer today stays written off rather than being asked again.
+`may_request_reconsent` is correctly implemented and unit-tested, and exists so a future
+re-engagement flow does not have to re-derive the cooloff rule; it is not, today, part of
+any decision the pipeline makes.
 
 Three deny reasons, not one, because the remedies differ: `consent_withdrawn`,
 `dnd_registered`, `transactional_window_expired` (plus `no_transactional_basis` when

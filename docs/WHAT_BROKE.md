@@ -1666,6 +1666,58 @@ still gets the full exact-digit guarantee locally.
 
 ---
 
+## 2026-09-07 · `payment_attempts` and `invoices.status` were built to be written to, and nothing wrote to them
+
+**Believed.** `agent/orchestrator.py` and `docs/WHAT_BROKE.md` (the 2026-08-30 entry on
+the resume hole) both describe the NPCI attempt budget as "counted from
+`payment_attempts`." `api/main.py`'s `/worklist` docstring describes the endpoint as one
+that "shrinks as the agent works, which is the behaviour that makes it a queue." The
+`UNIQUE NULLS NOT DISTINCT (invoice_id, attempt_number, run_id, arm)` constraint on
+`payment_attempts`, and the `UPDATE ON invoices` grant to `winback_agent`, both read as
+deliberate support for runtime writes to those columns.
+
+**Actually true.** Neither ever happened. `SimulatedAdapter.present`
+(`agent/adapters/simulated.py`) builds a complete `AttemptRow` for every presentment and
+returns it as `ExecutionResult.metadata[ATTEMPT_ROW]` — and `agent/tools.py::_execute`
+strips `metadata` before the result reaches the agent, correctly, because the row
+carries the oracle's true success probability. Nothing else ever read it before it was
+stripped, so it was built and thrown away on every single call. `AuditWriter.record_action`
+had no path that touched `payment_attempts` at all; `Workbench.attempts_used`
+(`agent/tools.py`) returned `1 + an in-memory count` instead, correct only because every
+case in the frozen cohort happens to be a first failure. Likewise, no `UPDATE invoices`
+existed anywhere outside a test file — a batch that recovered every invoice it touched
+left `/worklist` returning the identical rows before and after, visibly, in the demo.
+A third defect followed directly from the first: `exception_worklist`'s NPCI-budget
+aggregates were filtered to `a.run_id IS NULL`, so even a correct fix to
+`payment_attempts` would have left the budget shown to the agent and to
+`/invoices/{id}/compliance` frozen forever after the first run, because the very rows
+that fix would start writing are exactly the ones that filter excluded.
+
+**Cost.** Every reported "attempts remaining" number after a run was stale seeded
+history, never what the run itself had spent. The live operational queue never reflected
+a single recovery or write-off. And the schema's own uniqueness constraint — one of the
+more carefully reasoned lines in it — was guarding a table nothing wrote to.
+
+**Changed.** `AuditWriter._attempt_row_for` recovers the `AttemptRow` from
+`bench.executions`, which still holds it in full after `_execute` strips the copy meant
+for the agent, and `record_action` inserts it in the same transaction as the audit row.
+The same transaction now also runs `UPDATE invoices SET status = ... WHERE invoice_id = %s
+AND status = 'at_risk'` on `recovered` or `write_off`, guarded so it can never overwrite
+an invoice a prior call already concluded. `exception_worklist`'s four `FILTER` clauses
+dropped the `run_id IS NULL` restriction in favour of `WHERE a.observed` — safe because
+the four-arm evaluation harness (`eval/persist.py`) never writes to `payment_attempts` at
+all, so every `run_id IS NOT NULL` row is guaranteed to be a genuine presentment. Two
+doc-drift claims that assumed otherwise (`sim/load.py`'s module docstring,
+`docs/DATA.md`'s schema table) are corrected to say so. Tests:
+`test_a_presentment_actually_lands_a_row_in_payment_attempts`,
+`test_a_nudge_writes_no_payment_attempts_row`,
+`test_a_recovered_outcome_moves_the_invoice_off_the_worklist`,
+`test_a_write_off_moves_the_invoice_to_written_off`, and
+`test_a_denied_action_leaves_the_invoice_at_risk` (all in
+`agent/tests/test_audit_writes.py`).
+
+---
+
 ## Open
 
 - ~~**`batch_v2` is 75/190 and resuming.**~~ **Closed — it finished, and this line was

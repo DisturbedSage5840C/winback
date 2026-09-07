@@ -21,6 +21,7 @@ import psycopg
 import pytest
 
 from agent import hooks
+from agent.adapters.simulated import ATTEMPT_ROW
 from agent.hooks import AGENT_ID, MODEL_VERSION, AuditWriter
 from agent.tools import MONEY_TOOL
 from core.db import agent_connection
@@ -59,6 +60,22 @@ async def _plan_for(tools, bench, invoice_id: str) -> str:
     now = bench.cases[invoice_id].first_charge.attempted_at + timedelta(hours=DECISION_LAG_HOURS)
     await tools["assess_recoverability"].handler({"invoice_id": invoice_id, "now": now.isoformat()})
     return now.isoformat()
+
+
+async def _approved_retry_slot(tools, bench, invoice_id: str) -> str:
+    """Assess, take the first slot the guardrail approves a retry for, and spend the
+    guardrail call so an unspent approval is on record for ``execute_recovery``."""
+    from compliance.guardrail import ActionKind
+
+    await _plan_for(tools, bench, invoice_id)
+    for candidate in bench.plans[invoice_id].candidates:
+        if candidate.kind is ActionKind.RETRY and candidate.allowed:
+            slot = candidate.execute_at.isoformat()
+            await tools["compliance_guardrail"].handler(
+                {"invoice_id": invoice_id, "action": "retry", "execute_at": slot}
+            )
+            return slot
+    raise AssertionError(f"no approved retry slot for {invoice_id}")
 
 
 def _payload(invoice_id: str, execute_at: str, **over) -> dict:
@@ -147,6 +164,138 @@ async def test_an_action_row_points_back_at_the_decision_that_authorised_it(
     assert row["execution_mode"] == "simulated"
     assert row["outcome"] == "recovered"
     assert row["recovered_amount_paise"] == 109100
+
+
+async def test_a_presentment_actually_lands_a_row_in_payment_attempts(writer, tools, bench, conn):
+    """The defect this file was missing, stated end to end.
+
+    ``SimulatedAdapter.present`` builds a full ``AttemptRow`` and ``ExecutionResult``
+    carries it as ``metadata[ATTEMPT_ROW]`` (``agent/adapters/simulated.py``).
+    ``agent/tools.py::_execute`` appends the whole row — metadata included — to
+    ``bench.executions``, then strips ``metadata`` before handing anything back to the
+    agent, because the oracle's true probability rides along with it and must never be
+    agent-visible. What reached ``record_action`` used to be exactly that stripped
+    payload, so the row the schema was built to hold was constructed and thrown away on
+    every single run. This test drives a real tool call through ``execute_recovery``,
+    parses the JSON the agent would actually receive back — the same round trip
+    ``_text()``/``json.dumps`` puts it through — and hands that to ``record_action``
+    exactly as ``agent/hooks.py::make_audit_hook`` would, then checks the database
+    rather than the in-memory row.
+    """
+    invoice_id = sorted(bench.cases)[0]
+    slot = await _approved_retry_slot(tools, bench, invoice_id)
+
+    result = await tools["execute_recovery"].handler({"invoice_id": invoice_id, "execute_at": slot})
+    payload = json.loads(result["content"][0]["text"])
+    assert payload.get("action") == "retry", payload
+
+    writer.record_action(payload, trigger="batch_scan")
+
+    attempt = next(
+        row["metadata"][ATTEMPT_ROW]
+        for row in bench.executions
+        if row["invoice_id"] == invoice_id and row["execute_at"] == slot
+    )
+
+    row = conn.execute(
+        "SELECT * FROM payment_attempts WHERE attempt_id = %s", (attempt.attempt_id,)
+    ).fetchone()
+    assert row is not None
+    assert row["invoice_id"] == invoice_id
+    assert row["subscription_id"] == attempt.subscription_id
+    assert row["attempt_number"] == attempt.attempt_number
+    assert row["run_id"] == RUN_ID
+    assert row["arm"] == "D"
+
+    audit_row = conn.execute(
+        "SELECT * FROM audit_log WHERE run_id = %s AND subject_id = %s", (RUN_ID, invoice_id)
+    ).fetchone()
+    assert audit_row["action_taken"] == "retry"
+
+
+async def test_a_recovered_outcome_moves_the_invoice_off_the_worklist(writer, tools, bench, conn):
+    """``api/main.py``'s ``/worklist`` is filtered ``WHERE status = 'at_risk'`` -- the
+    only thing that makes it shrink as the agent works, per its own docstring. Nothing
+    wrote ``invoices.status`` at runtime until now, so a batch that recovered every
+    invoice it touched left the live queue looking identical before and after."""
+    invoice_id = sorted(bench.cases)[0]
+    at = await _plan_for(tools, bench, invoice_id)
+
+    before = conn.execute(
+        "SELECT status FROM invoices WHERE invoice_id = %s", (invoice_id,)
+    ).fetchone()
+    assert before["status"] == "at_risk"
+
+    writer.record_action(
+        _payload(
+            invoice_id,
+            at,
+            execution_mode="simulated",
+            outcome="recovered",
+            recovered_paise=109100,
+        ),
+        trigger="batch_scan",
+    )
+
+    after = conn.execute(
+        "SELECT status FROM invoices WHERE invoice_id = %s", (invoice_id,)
+    ).fetchone()
+    assert after["status"] == "recovered"
+
+
+async def test_a_write_off_moves_the_invoice_to_written_off(writer, bench, conn):
+    """The other conclusion that must leave the live worklist. A write-off calls no
+    tool -- there is nothing to execute -- so this reaches ``record_action`` only
+    through :meth:`AuditWriter.record_conclusion`, exercised here at the level below it
+    since building a real all-candidates-refused plan is what that method's own caller
+    is for."""
+    invoice_id = sorted(bench.cases)[0]
+    writer.record_action(
+        {"invoice_id": invoice_id, "action": "write_off", "execution_mode": "simulated"},
+        trigger="batch_scan",
+        outcome="blocked",
+        stop_reason="bd_hard_not_retryable",
+    )
+    row = conn.execute(
+        "SELECT status FROM invoices WHERE invoice_id = %s", (invoice_id,)
+    ).fetchone()
+    assert row["status"] == "written_off"
+
+
+async def test_a_denied_action_leaves_the_invoice_at_risk(writer, bench, conn):
+    """A refused single action is not a conclusion. The cap may still have budget, or a
+    later slot may be legal -- only ``recovered`` and ``write_off`` may move
+    ``invoices.status`` off ``at_risk``."""
+    invoice_id = sorted(bench.cases)[0]
+    writer.record_denial(
+        MONEY_TOOL, {"invoice_id": invoice_id}, "no_guardrail_approval: nothing on record"
+    )
+    row = conn.execute(
+        "SELECT status FROM invoices WHERE invoice_id = %s", (invoice_id,)
+    ).fetchone()
+    assert row["status"] == "at_risk"
+
+
+async def test_a_nudge_writes_no_payment_attempts_row(writer, tools, bench, conn):
+    """A nudge has no presentment behind it — ``SimulatedAdapter.nudge`` produces no
+    ``AttemptRow`` at all (``agent/adapters/simulated.py``) — so ``record_action`` must
+    not manufacture one. Only ``execute_recovery`` (a RETRY) can ever populate
+    ``payment_attempts``."""
+    invoice_id = sorted(bench.cases)[0]
+    now = await _plan_for(tools, bench, invoice_id)
+    await tools["compliance_guardrail"].handler(
+        {"invoice_id": invoice_id, "action": "nudge", "execute_at": now}
+    )
+    result = await tools["simulated_notify"].handler({"invoice_id": invoice_id, "execute_at": now})
+    payload = json.loads(result["content"][0]["text"])
+    assert payload.get("action") == "nudge", payload
+
+    writer.record_action(payload, trigger="batch_scan")
+
+    count = conn.execute(
+        "SELECT count(*) AS n FROM payment_attempts WHERE run_id = %s", (RUN_ID,)
+    ).fetchone()["n"]
+    assert count == 0
 
 
 async def test_a_gate_denial_lands_as_a_blocked_row(writer, bench, conn):

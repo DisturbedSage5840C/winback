@@ -89,7 +89,7 @@ it today would believe it works.
 
 Complete through **Day 10 of 10** (26 Aug → 5 Sep 2026), tagged
 [**v1.0.2**](https://github.com/DisturbedSage5840C/winback/releases/tag/v1.0.2).
-**645 tests passing, 99% coverage on `compliance/`.**
+**650 tests passing, 99% coverage on `compliance/`.**
 
 | | |
 |---|---|
@@ -148,7 +148,7 @@ about why "it works on my machine" is not a test.
 
 ## 07 — What broke
 
-[`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) has **47 entries**, written as they happened
+[`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) has **48 entries**, written as they happened
 rather than reconstructed at the end. Four worth reading, because they are the four
 kinds of mistake this project actually made:
 

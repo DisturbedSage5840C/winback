@@ -177,7 +177,11 @@ CREATE TABLE payment_attempts (
         censoring_reason IN ('legacy_value_floor', 'legacy_rail_excluded')
     ),
 
-    -- NULL/NULL => observational history. Set together for evaluation-arm attempts.
+    -- NULL/NULL => observational history seeded by sim/load.py. Set together for a
+    -- presentment the live/simulated agent actually made (agent/hooks.py::AuditWriter,
+    -- always arm='D' in practice) -- the four-arm evaluation harness in eval/ never
+    -- writes to this table at all; it replays against the oracle in memory and persists
+    -- only to eval_runs/eval_arm_results (eval/persist.py).
     run_id           TEXT,
     arm              TEXT CHECK (arm IN ('A', 'B', 'C', 'D')),
 
@@ -294,8 +298,16 @@ CREATE TABLE audit_log (
     recovered_amount_paise BIGINT NOT NULL DEFAULT 0,
     stop_reason            TEXT,
 
-    -- TRUE when the action breached an NPCI/RBI/TRAI rule. Arm D must be 0 by
-    -- construction; arms B and C will not be, and that contrast is the thesis.
+    -- TRUE when the action breached an NPCI/RBI/TRAI rule. audit_log is written only
+    -- by the live/simulated agent's own run (agent/hooks.py::AuditWriter) -- never by
+    -- the four-arm evaluation harness, which writes eval_arm_results.compliance_
+    -- violations instead, and where the B/C-vs-D contrast documented in
+    -- docs/EVALUATION.md actually lives. Every row that reaches this table already
+    -- passed compliance.guardrail.evaluate() before execute_recovery or
+    -- simulated_notify was allowed to run: the gate sits upstream of the write, not
+    -- downstream of it, so this column is FALSE by construction for every row the
+    -- agent can produce -- it is a canary for the gate having been bypassed, not a
+    -- measurement of the agent choosing to comply.
     compliance_violation   BOOLEAN NOT NULL DEFAULT FALSE
 );
 
@@ -454,18 +466,24 @@ SELECT
     i.notice_sent_at,
     s.status                                        AS subscription_status,
     c.consent_status,
-    -- `AND a.observed` is load-bearing, not defensive. Rows with observed = FALSE
-    -- are counterfactual: outcomes the oracle knows for retries the legacy policy
-    -- never made. They cost no NPCI budget, because they never reached a rail.
-    -- Counting them here would tell the worklist a censored invoice had used all
-    -- four attempts when it had used one, and the agent would decline to retry the
-    -- very invoices the censoring makes most interesting.
-    count(a.attempt_id) FILTER (WHERE a.run_id IS NULL AND a.observed) AS attempts_used,
-    4 - count(a.attempt_id) FILTER (WHERE a.run_id IS NULL AND a.observed)
-                                                    AS attempts_remaining,
-    max(a.attempted_at) FILTER (WHERE a.run_id IS NULL AND a.observed) AS last_attempt_at,
+    -- `a.observed` is load-bearing, not defensive. Rows with observed = FALSE are
+    -- counterfactual: outcomes the oracle knows for retries the legacy policy never
+    -- made. They cost no NPCI budget, because they never reached a rail. Counting them
+    -- here would tell the worklist a censored invoice had used all four attempts when
+    -- it had used one, and the agent would decline to retry the very invoices the
+    -- censoring makes most interesting.
+    --
+    -- Not filtered to `run_id IS NULL`: the live/simulated agent's own presentments
+    -- (agent/hooks.py::AuditWriter) are tagged with a run_id and DO cost a real NPCI
+    -- attempt against this invoice, so they must count here too, or the budget shown
+    -- to the agent would never move after a run that actually spent one. This is safe
+    -- because nothing else writes a tagged row into this table -- the four-arm
+    -- evaluation harness never does (see the payment_attempts.run_id comment above).
+    count(a.attempt_id) FILTER (WHERE a.observed) AS attempts_used,
+    4 - count(a.attempt_id) FILTER (WHERE a.observed) AS attempts_remaining,
+    max(a.attempted_at) FILTER (WHERE a.observed) AS last_attempt_at,
     (array_agg(a.root_cause_class ORDER BY a.attempt_number DESC)
-        FILTER (WHERE a.run_id IS NULL AND a.observed AND a.root_cause_class IS NOT NULL))[1]
+        FILTER (WHERE a.observed AND a.root_cause_class IS NOT NULL))[1]
                                                     AS latest_root_cause
 FROM invoices i
 JOIN subscriptions s USING (subscription_id)

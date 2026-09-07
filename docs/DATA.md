@@ -30,7 +30,7 @@ immutable, state is not.**
 | `customers` | state | `customer_hash` = `sha256(customer_id)[:12]`, the only identifier permitted into `audit_log` |
 | `subscriptions` | state | `cohort ∈ {train, calibrate, test}` frozen at generation, before any model exists |
 | `invoices` | state | One row per billing cycle. Both revenue-at-risk and the 1+3 budget are scoped to it. |
-| `payment_attempts` | **immutable** | Observational history (`run_id IS NULL`) *and* evaluation-arm attempts, one table |
+| `payment_attempts` | **immutable** | Observational history (`run_id IS NULL`) plus the live/simulated agent's own presentments (`run_id`/`arm='D'`) — the four-arm evaluation harness never writes here; its results live in `eval_arm_results` |
 | `decisions` | **immutable** | Includes `candidate_set` — every scored option, not just the winner |
 | `audit_log` | **immutable** | Append-only, `execution_mode` per row |
 | `eval_runs` / `eval_arm_results` | regenerated | So `EVALUATION.md` is generated from the database, never hand-typed |

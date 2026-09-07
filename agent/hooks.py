@@ -35,9 +35,11 @@ from typing import Any
 
 from claude_agent_sdk import HookContext, HookMatcher
 
+from agent.adapters.simulated import ATTEMPT_ROW
 from agent.tools import GUARDRAIL_TOOL, MONEY_TOOL, Workbench
 from compliance.guardrail import ActionKind
 from core.db import agent_connection
+from sim.generate import AttemptRow
 
 AGENT_ID = "winback-orchestrator"
 AGENT_VERSION = "1.0.0"
@@ -203,6 +205,31 @@ class AuditWriter:
 
     # ------------------------------------------------------------------ audit_log
 
+    def _attempt_row_for(
+        self, invoice_id: str, action: str | None, execute_at: str | None
+    ) -> AttemptRow | None:
+        """The oracle's ``payment_attempts`` row for this presentment, if one exists.
+
+        Only a spent ``execute_recovery`` call on the simulated lane produces one —
+        the live lane has no presentment API to record one from, and inventing one
+        would be the fabrication ``ATTEMPT_ROW`` exists to rule out (see
+        ``agent/adapters/simulated.py``). Read from ``bench.executions`` rather than
+        from ``payload``: the row is a Python object with a ``datetime`` field, and
+        ``payload`` is what survived the round trip through ``json.dumps`` on the way
+        back to the agent — a trip ``agent/tools.py::_execute`` deliberately does not
+        let this object make, because the oracle's true probability rides along with it.
+        """
+        if action != str(ActionKind.RETRY) or execute_at is None:
+            return None
+        for row in reversed(self.bench.executions):
+            if (
+                row["invoice_id"] == invoice_id
+                and row["action"] == action
+                and row["execute_at"] == execute_at
+            ):
+                return row.get("metadata", {}).get(ATTEMPT_ROW)
+        return None
+
     def record_action(
         self,
         payload: dict[str, Any],
@@ -218,6 +245,29 @@ class AuditWriter:
         ``covers=False`` writes the row without counting the invoice as concluded, for
         the rare event that is about an invoice without settling it. See
         :meth:`record_degradation`, the only caller that needs it.
+
+        **The defect this closes.** A presentment's ``payment_attempts`` row was built
+        by ``SimulatedAdapter.present`` and handed back as
+        ``ExecutionResult.metadata[ATTEMPT_ROW]`` — and then discarded.
+        ``agent/tools.py::_execute`` strips ``metadata`` before returning to the agent
+        (correctly: the row carries the oracle's true probability), but nothing else
+        ever read it before it was stripped, so the ``UNIQUE NULLS NOT DISTINCT
+        (invoice_id, attempt_number, run_id, arm)`` constraint at ``db/01_schema.sql``
+        guarded a table nothing wrote to at runtime, and every NPCI-budget read after
+        a batch — ``Workbench.attempts_used``, ``/invoices/{id}/compliance`` — counted
+        seeded history only. :meth:`_attempt_row_for` recovers the row from
+        ``bench.executions``, which still holds it in full, and it is written here,
+        in the same transaction as the row below.
+
+        **A second, related defect closed here.** ``invoices.status`` never advanced
+        either — nothing in this codebase ran an ``UPDATE invoices`` outside a test file,
+        though ``db/03_grants.sql`` grants exactly that to ``winback_agent`` and
+        ``db/02_append_only.sql`` explains the column is deliberately mutable. Since
+        ``api/main.py``'s ``/worklist`` is filtered to ``status = 'at_risk'``, a batch that
+        recovered every invoice it touched left the live queue showing the identical rows
+        afterwards. Fixed in the same transaction as everything else here, because a
+        recovery that reached ``audit_log`` but not ``invoices`` would be a fact the
+        compliance trail knew and the operational queue did not.
         """
         invoice_id = payload.get("invoice_id")
         if not invoice_id:
@@ -228,6 +278,8 @@ class AuditWriter:
         action = payload.get("action")
         execute_at = payload.get("execute_at")
         decision_id = self._decisions.get(f"{invoice_id}|{action}|{execute_at}")
+        attempt = self._attempt_row_for(invoice_id, action, execute_at)
+        final_outcome = outcome or payload.get("outcome")
 
         observed = {
             "customer_hash": payload.get("customer_hash"),
@@ -240,6 +292,63 @@ class AuditWriter:
         }
 
         with agent_connection() as conn:
+            if attempt is not None:
+                # Same transaction as the audit_log row below: a presentment and its
+                # attempt row are one fact, and a crash between two separate commits
+                # would let the two disagree about whether it happened.
+                conn.execute(
+                    """
+                    INSERT INTO payment_attempts (
+                        attempt_id, invoice_id, subscription_id, attempt_number,
+                        attempted_at, is_non_peak, action, amount_paise, outcome,
+                        error_code, error_source, error_step, error_reason,
+                        root_cause_class, observed, censoring_reason, oracle_seed,
+                        run_id, arm
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    """,
+                    (
+                        attempt.attempt_id,
+                        attempt.invoice_id,
+                        attempt.subscription_id,
+                        attempt.attempt_number,
+                        attempt.attempted_at,
+                        attempt.is_non_peak,
+                        attempt.action,
+                        attempt.amount_paise,
+                        attempt.outcome,
+                        attempt.error_code,
+                        attempt.error_source,
+                        attempt.error_step,
+                        attempt.error_reason,
+                        attempt.root_cause_class,
+                        attempt.observed,
+                        attempt.censoring_reason,
+                        attempt.oracle_seed,
+                        self.run_id,
+                        self.arm,
+                    ),
+                )
+            if final_outcome == "recovered" or action == str(ActionKind.WRITE_OFF):
+                # `/worklist` (api/main.py) is `WHERE status = 'at_risk'`, and that filter
+                # is the only thing that makes it a queue rather than a static list — see
+                # its own docstring. Nothing updated `invoices.status` until this line, so
+                # a batch that recovered every invoice it touched left the live worklist
+                # showing the exact same rows afterwards. The `AND status = 'at_risk'`
+                # guard makes this idempotent and keeps it from ever overwriting a
+                # 'recovered' or 'written_off' row a prior call already concluded.
+                conn.execute(
+                    """
+                    UPDATE invoices SET status = %s
+                    WHERE invoice_id = %s AND status = 'at_risk'
+                    """,
+                    (
+                        "recovered" if final_outcome == "recovered" else "written_off",
+                        invoice_id,
+                    ),
+                )
             conn.execute(
                 """
                 INSERT INTO audit_log (
@@ -264,7 +373,7 @@ class AuditWriter:
                     payload.get("channel"),
                     payload.get("execution_mode"),
                     payload.get("razorpay_entity_id"),
-                    outcome or payload.get("outcome"),
+                    final_outcome,
                     payload.get("recovered_paise", 0) or 0,
                     stop_reason,
                     violation,

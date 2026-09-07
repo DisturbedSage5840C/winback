@@ -28,12 +28,17 @@ evaluation would quietly become a measurement of the simulator reading its own a
 key.
 
 **Attempts arrive as history, not as evaluation rows.** ``run_id`` and ``arm`` stay NULL
-for everything written here. The four arms write their own attempt rows under a run,
-and the schema's ``UNIQUE NULLS NOT DISTINCT (invoice_id, attempt_number, run_id, arm)``
-is what keeps the two from colliding. The censored rows are loaded too, with
-``observed = FALSE`` and their censoring reason — they are not training data, but they
-are the evidence for what the legacy policy chose not to look at, and the calibration
-report in ``docs/EVALUATION.md`` §10 is about exactly them.
+for everything written here. The only other writer is the live/simulated agent's own
+run (``agent/hooks.py::AuditWriter``), which appends one tagged row (``arm='D'``) per
+presentment it actually makes — the four-arm evaluation harness in ``eval/`` never
+touches this table at all; it replays against the oracle in memory and persists only to
+``eval_runs``/``eval_arm_results``/``eval_arm_violations``/``eval_intervals``
+(``eval/persist.py``). The schema's
+``UNIQUE NULLS NOT DISTINCT (invoice_id, attempt_number, run_id, arm)`` is what keeps
+seeded history and a tagged run's own rows from colliding. The censored rows are loaded
+too, with ``observed = FALSE`` and their censoring reason — they are not training data,
+but they are the evidence for what the legacy policy chose not to look at, and the
+calibration report in ``docs/EVALUATION.md`` §10 is about exactly them.
 
 ``COPY`` rather than ``executemany``: 33,866 attempts is not a large table, but it is
 large enough that the difference is the difference between a demo that reseeds in

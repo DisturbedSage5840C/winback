@@ -151,7 +151,23 @@ class AuditWriter:
     # ------------------------------------------------------------------ decisions
 
     def record_decision(self, payload: dict[str, Any]) -> str | None:
-        """One guardrail evaluation, with the candidate set that produced it."""
+        """One guardrail evaluation, with the candidate set that produced it.
+
+        The trailing counter used to be ``len(self._decisions)`` — this process's own
+        count of decisions it has written with an ``execute_at``. That is fine for a run
+        that never restarts, but ``self._decisions`` is memory, and a resumed run starts
+        a fresh :class:`AuditWriter` with an empty one. ``_already_worked`` (in
+        ``agent/orchestrator.py``) deliberately re-works exactly the invoice that died
+        between the guardrail's approval and the tool call — the one case with a
+        ``decisions`` row already on record for this ``run_id``/``arm``/``invoice_id`` —
+        so the very first decision the resumed process wrote for that invoice regenerated
+        ``..._0000`` and collided with it. Counting from the table itself instead of from
+        this process's memory means the count is correct however many processes have
+        contributed to it. `invoice_id` is already embedded in the id; the counter's only
+        remaining job is to keep multiple guardrail evaluations *of the same invoice*
+        distinct — a ``REDIRECT_TO_WINDOW`` re-ask, or an agent that ignores the system
+        prompt and asks again — and a table read answers that as well as memory did.
+        """
         invoice_id = payload.get("invoice_id")
         if not invoice_id or invoice_id not in self.bench.cases:
             return None
@@ -159,12 +175,20 @@ class AuditWriter:
         case = self.bench.cases[invoice_id]
         action = payload.get("action", "")
         execute_at = payload.get("execute_at")
-        decision_id = f"dec_{self.run_id}_{self.arm}_{invoice_id}_{len(self._decisions):04d}"
 
         plan = self.bench.plans.get(invoice_id)
         chosen = plan.chosen if plan else None
 
         with agent_connection() as conn:
+            prior = conn.execute(
+                """
+                SELECT count(*) AS n FROM decisions
+                 WHERE run_id = %s AND arm = %s AND invoice_id = %s
+                """,
+                (self.run_id, self.arm, invoice_id),
+            ).fetchone()
+            decision_id = f"dec_{self.run_id}_{self.arm}_{invoice_id}_{prior['n']:04d}"
+
             conn.execute(
                 """
                 INSERT INTO decisions (

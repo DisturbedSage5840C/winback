@@ -133,6 +133,35 @@ async def test_a_decision_row_survives_a_ruled_out_candidate(writer, tools, benc
     assert count == written == 20
 
 
+async def test_a_resumed_run_does_not_collide_the_decision_id_with_the_crashed_attempt(
+    writer, tools, bench, conn
+):
+    """The defect closed in ``agent/hooks.py``, stated as regression.
+
+    ``_already_worked`` (``agent/orchestrator.py``) deliberately re-works exactly the
+    invoice that died between a guardrail approval and the tool call — the one case with
+    a ``decisions`` row already on record for this ``run_id``/``arm``/``invoice_id``. A
+    resumed run builds a brand-new :class:`AuditWriter` with an empty in-memory
+    ``_decisions``, which is exactly what regenerated the crashed run's own
+    ``decision_id`` and raised a ``UniqueViolation`` on it. Counting from the ``decisions``
+    table itself, instead of from this process's memory, is what closes it."""
+    invoice_id = sorted(bench.cases)[0]
+    at = await _plan_for(tools, bench, invoice_id)
+    first_id = writer.record_decision(_payload(invoice_id, at))
+    assert first_id is not None
+
+    resumed = AuditWriter(bench=bench, run_id=RUN_ID, arm="D")
+    second_id = resumed.record_decision(_payload(invoice_id, at))
+    assert second_id is not None
+    assert second_id != first_id
+
+    rows = conn.execute(
+        "SELECT decision_id FROM decisions WHERE run_id = %s AND invoice_id = %s",
+        (RUN_ID, invoice_id),
+    ).fetchall()
+    assert {row["decision_id"] for row in rows} == {first_id, second_id}
+
+
 async def test_an_action_row_points_back_at_the_decision_that_authorised_it(
     writer, tools, bench, conn
 ):

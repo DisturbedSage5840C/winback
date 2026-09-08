@@ -192,23 +192,33 @@ class Workbench:
     def attempts_used(self, invoice_id: str) -> int:
         """History plus what this batch has already spent. Never the agent's word for it.
 
-        The ``1 +`` assumes exactly one prior attempt: correct for every case here,
-        because ``ReplayCase.base_history`` (``eval/counterfactual.py``) always strips
-        this invoice's own legacy retries down to the first charge before the agent
-        ever sees it. It is also resume-fragile — ``self.executions`` is this process's
-        own memory, so a crash and restart with the same ``run_id`` forgets whatever
-        this batch already spent before it died. ``compliance/npci_retry_cap.py``'s
+        The prior-attempt count is read from ``case.first_charge.attempt_number``, not
+        hardcoded. It used to be a bare ``1``, which was correct only because every case
+        ``build_cases`` (``eval/counterfactual.py``) selects has ``first_charge.attempt_number
+        == 1`` by construction — the cohort filter only ever admits an invoice's *first*
+        failure. That made the hardcoded literal true for as long as nobody looked at it,
+        and silently wrong — in the permissive direction the NPCI cap exists to rule
+        out — the day ``Workbench.cases`` was populated from anything that did not carry
+        the same guarantee. Reading it off the case removes the assumption rather than
+        trusting it to keep holding.
+
+        Still resume-fragile in the other half: ``self.executions`` is this process's own
+        memory, so a crash and restart with the same ``run_id`` forgets whatever this
+        batch already spent before it died. ``compliance/npci_retry_cap.py``'s
         ``attempts_used_for_invoice`` counts the same thing from ``payment_attempts``
-        instead, scoped by ``run_id``, and would survive a resume; it is not yet called
-        from here (tracked alongside the resumed-run ``decision_id`` collision, which
-        the same crash-and-restart path depends on being fixed first).
+        instead, scoped by ``run_id``, and would survive a resume — but wiring it here
+        means giving ``Workbench`` a ``run_id`` and a database connection it does not
+        otherwise need, including in every in-memory test that constructs one without a
+        database. Not done here. The resumed-run ``decision_id`` collision this was once
+        waiting on is fixed (``agent/hooks.py``).
         """
+        case = self.cases[invoice_id]
         spent = sum(
             1
             for row in self.executions
             if row["invoice_id"] == invoice_id and row["action"] == str(ActionKind.RETRY)
         )
-        return 1 + spent
+        return case.first_charge.attempt_number + spent
 
     def actions_taken(self, invoice_id: str) -> int:
         """Every execution recorded for this invoice so far in this batch, either kind.

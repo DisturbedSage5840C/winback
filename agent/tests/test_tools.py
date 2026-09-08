@@ -8,6 +8,7 @@ past the guardrail?" — :func:`test_execute_without_a_guardrail_call_is_refused
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import datetime, timedelta
 
 import pytest
@@ -166,6 +167,22 @@ async def test_attempts_used_counts_history_plus_this_batch(tools, bench, invoic
     )
     await tools["execute_recovery"].handler({"invoice_id": invoice_id, "execute_at": slot})
     assert bench.attempts_used(invoice_id) == before + 1
+
+
+def test_attempts_used_reads_the_prior_count_off_the_case_not_a_hardcoded_one(bench, invoice_id):
+    """The regression this closes. ``attempts_used`` used to hardcode ``1 +`` for the
+    prior-attempt count, correct only because ``build_cases`` (``eval/counterfactual.py``)
+    never admits a case whose first charge is anything but its invoice's first attempt.
+    An invoice that already carried two prior legacy attempts before the agent saw it
+    would have had its NPCI budget under-counted -- permissively, which is the one
+    direction the cap must never be wrong in. Simulating that here by editing the case
+    directly, the way it would look if that cohort guarantee were ever not true."""
+    case = bench.cases[invoice_id]
+    bench.cases[invoice_id] = dataclasses.replace(
+        case, first_charge=dataclasses.replace(case.first_charge, attempt_number=3)
+    )
+
+    assert bench.attempts_used(invoice_id) == 3
 
 
 async def test_a_nudge_does_not_consume_a_legal_attempt(tools, bench, invoice_id):

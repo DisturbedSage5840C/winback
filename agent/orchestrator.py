@@ -357,23 +357,55 @@ def _options(bench: Workbench, writer: AuditWriter, settings, lane: Lane) -> Cla
     )
 
 
+class AgentTurnError(RuntimeError):
+    """The SDK's own verdict on the turn was ``is_error``, not this loop's.
+
+    ``query()`` returning without raising is not the same as the turn having succeeded —
+    ``error_max_turns`` and ``error_during_execution`` both end a conversation the way a
+    clean run does, as far as an ``async for`` is concerned. Before this, ``_run_one``
+    handed back whatever partial summary text it had seen and the batch counted the
+    invoice as completed; an invoice that ran out of turns mid-negotiation looked
+    identical, in the report, to one the agent actually finished. Raising here routes it
+    through the same per-invoice failure path as any other exception instead.
+    """
+
+
 async def _run_one(
-    invoice_id: str, now: datetime, options: ClaudeAgentOptions
+    invoice_id: str, now: datetime, options: ClaudeAgentOptions, *, timeout_seconds: float
 ) -> tuple[str, float]:
-    """One invoice, one fresh context, at most ``max_turns`` turns."""
+    """One invoice, one fresh context, at most ``max_turns`` turns and ``timeout_seconds``
+    of wall clock.
+
+    ``max_turns`` bounds how many round trips a conversation can take; nothing bounded how
+    long any one of them could hang, so a stalled transport blocked the batch one invoice
+    at a time instead of failing the invoice in front of it. ``asyncio.TimeoutError`` from
+    an expired timeout reaches the caller like any other exception — the broad ``except``
+    in ``run_batch`` already exists to step over a bad invoice without ending the batch.
+
+    Raises :class:`AgentTurnError` if the turn's own ``ResultMessage.is_error`` says it
+    did not end cleanly — see that class for why this is not the same as ``query()``
+    itself raising.
+    """
     prompt = (
         f"Invoice {invoice_id} failed its scheduled debit. The current time is "
         f"{now.isoformat()}. Work it to a conclusion following the protocol."
     )
-    summary, cost = "", 0.0
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, AssistantMessage):
-            for block in message.content:
-                if isinstance(block, TextBlock) and block.text.strip():
-                    summary = block.text.strip()
-        elif isinstance(message, ResultMessage):
-            cost = message.total_cost_usd or 0.0
-    return summary, cost
+
+    async def _consume() -> tuple[str, float]:
+        summary, cost = "", 0.0
+        async for message in query(prompt=prompt, options=options):
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock) and block.text.strip():
+                        summary = block.text.strip()
+            elif isinstance(message, ResultMessage):
+                cost = message.total_cost_usd or 0.0
+                if message.is_error:
+                    detail = "; ".join(message.errors) if message.errors else message.subtype
+                    raise AgentTurnError(f"turn ended in error ({message.subtype}): {detail}")
+        return summary, cost
+
+    return await asyncio.wait_for(_consume(), timeout=timeout_seconds)
 
 
 def _adapter_for(settings) -> Adapter | None:
@@ -485,125 +517,139 @@ async def run_batch(
         print(f"pre-approved: {', '.join(sorted(n.split('__')[-1] for n in PREAPPROVED_TOOLS))}")
         print(f"gated:        {', '.join(sorted(n.split('__')[-1] for n in GATED_TOOLS))}\n")
 
-    tally = _Tally()
-    started = time.monotonic()
+    try:
+        tally = _Tally()
+        started = time.monotonic()
 
-    for index, invoice_id in enumerate(pending, start=1):
-        case = bench.cases[invoice_id]
-        now = case.first_charge.attempted_at + timedelta(hours=DECISION_LAG_HOURS)
-        try:
-            summary, cost = await _run_one(invoice_id, now, options)
-            tally.completed += 1
-            tally.cost_usd += cost
-
-            # Every invoice the agent finishes must leave a row, and one that reached a
-            # conclusion in prose and never in the table is the one case the hooks cannot
-            # see: `PostToolUse` fires on tools, and the event here is that no tool ran.
-            # `live_v2` did exactly this once in twelve — approved a retry, said so, and
-            # exhausted its turn budget. See `AuditWriter.record_silence`.
-            if invoice_id not in writer.covered:
-                tally.silent += 1
-                writer.record_silence(invoice_id)
-        except Exception as exc:  # broad on purpose — one bad invoice must not end the batch
-            # Before charging this to the invoice: was it the invoice at all? A Razorpay
-            # transport that died mid-batch will meet every remaining invoice too, so it
-            # is diagnosed once, demoted down the ladder, written into the audit trail
-            # against the invoice that hit it, and *this invoice is retried on the new
-            # lane* — the fault costs the batch a transport, not a recovery.
-            demoted = False
-            if lane.mode != "off" and _looks_like_mcp_failure(exc):
-                below = LADDER[LADDER.index(lane.mode) + 1] if lane.mode in LADDER else "off"
-                probed = open_lane(settings, start_at=below)
-                lane = Lane(
-                    requested=lane.requested,
-                    mode=probed.mode,
-                    servers=probed.servers,
-                    demotions=[
-                        *lane.demotions,
-                        f"{lane.mode} failed at {invoice_id} — {type(exc).__name__}",
-                        *probed.demotions,
-                    ],
+        for index, invoice_id in enumerate(pending, start=1):
+            case = bench.cases[invoice_id]
+            now = case.first_charge.attempted_at + timedelta(hours=DECISION_LAG_HOURS)
+            try:
+                summary, cost = await _run_one(
+                    invoice_id, now, options, timeout_seconds=settings.agent_timeout_seconds
                 )
-                options = _options(bench, writer, settings, lane)
-                writer.record_degradation(invoice_id, lane.demotions[-1], lane.mode)
-                tally.demotions.append(lane.demotions[-1] if lane.demotions else "")
-                demoted = True
-                if verbose:
-                    print(f"\n⚠ {lane.describe()}")
-                    print(f"  retrying {invoice_id} on the {lane.mode} lane\n")
-                try:
-                    summary, cost = await _run_one(invoice_id, now, options)
-                    tally.completed += 1
-                    tally.cost_usd += cost
-                    if invoice_id not in writer.covered:
-                        tally.silent += 1
-                        writer.record_silence(invoice_id)
-                except Exception as retry_exc:
-                    exc = retry_exc
-                    demoted = False
+                tally.completed += 1
+                tally.cost_usd += cost
 
-            if demoted:
-                if verbose:
-                    recovered = sum(row.get("recovered_paise", 0) for row in bench.executions)
-                    print(
-                        f"[{index:>3}/{len(pending)}] {invoice_id} · "
-                        f"₹{recovered / 100:,.0f} so far · {summary[:96]}"
+                # Every invoice the agent finishes must leave a row, and one that reached a
+                # conclusion in prose and never in the table is the one case the hooks cannot
+                # see: `PostToolUse` fires on tools, and the event here is that no tool ran.
+                # `live_v2` did exactly this once in twelve — approved a retry, said so, and
+                # exhausted its turn budget. See `AuditWriter.record_silence`.
+                if invoice_id not in writer.covered:
+                    tally.silent += 1
+                    writer.record_silence(invoice_id)
+            except Exception as exc:  # broad on purpose — one bad invoice must not end the batch
+                # Before charging this to the invoice: was it the invoice at all? A Razorpay
+                # transport that died mid-batch will meet every remaining invoice too, so it
+                # is diagnosed once, demoted down the ladder, written into the audit trail
+                # against the invoice that hit it, and *this invoice is retried on the new
+                # lane* — the fault costs the batch a transport, not a recovery.
+                demoted = False
+                if lane.mode != "off" and _looks_like_mcp_failure(exc):
+                    below = LADDER[LADDER.index(lane.mode) + 1] if lane.mode in LADDER else "off"
+                    probed = open_lane(settings, start_at=below)
+                    lane = Lane(
+                        requested=lane.requested,
+                        mode=probed.mode,
+                        servers=probed.servers,
+                        demotions=[
+                            *lane.demotions,
+                            f"{lane.mode} failed at {invoice_id} — {type(exc).__name__}",
+                            *probed.demotions,
+                        ],
                     )
-                continue
+                    options = _options(bench, writer, settings, lane)
+                    writer.record_degradation(invoice_id, lane.demotions[-1], lane.mode)
+                    tally.demotions.append(lane.demotions[-1] if lane.demotions else "")
+                    demoted = True
+                    if verbose:
+                        print(f"\n⚠ {lane.describe()}")
+                        print(f"  retrying {invoice_id} on the {lane.mode} lane\n")
+                    try:
+                        summary, cost = await _run_one(
+                            invoice_id, now, options, timeout_seconds=settings.agent_timeout_seconds
+                        )
+                        tally.completed += 1
+                        tally.cost_usd += cost
+                        if invoice_id not in writer.covered:
+                            tally.silent += 1
+                            writer.record_silence(invoice_id)
+                    except Exception as retry_exc:
+                        exc = retry_exc
+                        demoted = False
 
-            # The batch is meant to complete unattended. An invoice that throws is
-            # recorded and stepped over; ending the run would lose the 189 that worked.
-            tally.failed += 1
-            tally.errors.append(f"{invoice_id}: {type(exc).__name__}: {exc}")
-            summary = f"ERROR {type(exc).__name__}"
+                if demoted:
+                    if verbose:
+                        recovered = sum(row.get("recovered_paise", 0) for row in bench.executions)
+                        print(
+                            f"[{index:>3}/{len(pending)}] {invoice_id} · "
+                            f"₹{recovered / 100:,.0f} so far · {summary[:96]}"
+                        )
+                    continue
 
-            # Unless it is not about this invoice at all. An exhausted quota or a rate
-            # limit will meet every invoice left, so the batch stops and says so — and
-            # what it has written stays written, ready to be resumed under the same
-            # --run-id once the condition clears.
-            if _is_fatal_to_the_batch(exc):
-                tally.halted = str(exc).strip()[:160]
-                if verbose:
-                    print(f"\n⚠ halted at {invoice_id}: {tally.halted}")
-                    print(f"  {len(pending) - index} invoice(s) not attempted. Resume with:")
-                    print(f"    python -m agent.orchestrator --run-id {run_id}")
-                break
+                # The batch is meant to complete unattended. An invoice that throws is
+                # recorded and stepped over; ending the run would lose the 189 that worked.
+                tally.failed += 1
+                tally.errors.append(f"{invoice_id}: {type(exc).__name__}: {exc}")
+                summary = f"ERROR {type(exc).__name__}"
 
-        if verbose:
-            recovered = sum(row.get("recovered_paise", 0) for row in bench.executions)
-            print(
-                f"[{index:>3}/{len(pending)}] {invoice_id} · "
-                f"₹{recovered / 100:,.0f} so far · {summary[:96]}"
-            )
+                # Unless it is not about this invoice at all. An exhausted quota or a rate
+                # limit will meet every invoice left, so the batch stops and says so — and
+                # what it has written stays written, ready to be resumed under the same
+                # --run-id once the condition clears.
+                if _is_fatal_to_the_batch(exc):
+                    tally.halted = str(exc).strip()[:160]
+                    if verbose:
+                        print(f"\n⚠ halted at {invoice_id}: {tally.halted}")
+                        print(f"  {len(pending) - index} invoice(s) not attempted. Resume with:")
+                        print(f"    python -m agent.orchestrator --run-id {run_id}")
+                    break
 
-    if verbose and tally.errors:
-        print(f"\n{len(tally.errors)} invoice(s) errored:")
-        for line in tally.errors[:10]:
-            print(f"  {line}")
+            if verbose:
+                recovered = sum(row.get("recovered_paise", 0) for row in bench.executions)
+                print(
+                    f"[{index:>3}/{len(pending)}] {invoice_id} · "
+                    f"₹{recovered / 100:,.0f} so far · {summary[:96]}"
+                )
 
-    if verbose and writer.write_failures:
-        print(f"\n{len(writer.write_failures)} audit write(s) failed:")
-        for line in writer.write_failures[:10]:
-            print(f"  {line}")
+        if verbose and tally.errors:
+            print(f"\n{len(tally.errors)} invoice(s) errored:")
+            for line in tally.errors[:10]:
+                print(f"  {line}")
 
-    return BatchReport(
-        run_id=run_id,
-        execution_mode=str(bench.adapter.mode),
-        invoices=len(invoice_ids),
-        completed=tally.completed,
-        failed=tally.failed,
-        executions=len(bench.executions),
-        recovered_paise=sum(row.get("recovered_paise", 0) for row in bench.executions),
-        audit_rows=writer.rows_written,
-        seconds=time.monotonic() - started,
-        total_cost_usd=tally.cost_usd,
-        audit_failures=tuple(writer.write_failures),
-        resumed=len(done),
-        halted=tally.halted,
-        silent=tally.silent,
-        mcp_lane=lane.mode,
-        demotions=tuple(lane.demotions),
-    )
+        if verbose and writer.write_failures:
+            print(f"\n{len(writer.write_failures)} audit write(s) failed:")
+            for line in writer.write_failures[:10]:
+                print(f"  {line}")
+
+        return BatchReport(
+            run_id=run_id,
+            execution_mode=str(bench.adapter.mode),
+            invoices=len(invoice_ids),
+            completed=tally.completed,
+            failed=tally.failed,
+            executions=len(bench.executions),
+            recovered_paise=sum(row.get("recovered_paise", 0) for row in bench.executions),
+            audit_rows=writer.rows_written,
+            seconds=time.monotonic() - started,
+            total_cost_usd=tally.cost_usd,
+            audit_failures=tuple(writer.write_failures),
+            resumed=len(done),
+            halted=tally.halted,
+            silent=tally.silent,
+            mcp_lane=lane.mode,
+            demotions=tuple(lane.demotions),
+        )
+    finally:
+        # LiveRazorpayAdapter holds an httpx.Client; SimulatedAdapter holds nothing
+        # to release, so this is a no-op on every batch but a live one. Previously
+        # never called at all -- a live run leaked one open connection per invocation
+        # of this function, and an interrupted run (Ctrl+C, or a cancelled task) left
+        # it leaked even on the lane this fix was written for.
+        close = getattr(bench.adapter, "close", None)
+        if close is not None:
+            close()
 
 
 def main() -> int:

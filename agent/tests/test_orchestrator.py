@@ -9,22 +9,26 @@ exits non-zero. All of those are decidable without a single token.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
+from datetime import UTC, datetime
 
 import pytest
-from claude_agent_sdk import CLIConnectionError
+from claude_agent_sdk import CLIConnectionError, ResultMessage
 
 from agent.adapters.base import ExecutionMode
 from agent.adapters.simulated import SimulatedAdapter
 from agent.mcp_config import Lane
 from agent.orchestrator import (
     LIVE_CALLS_PER_INVOICE,
+    AgentTurnError,
     BatchReport,
     _adapter_for,
     _already_worked,
     _is_fatal_to_the_batch,
     _looks_like_mcp_failure,
     _options,
+    _run_one,
 )
 from agent.tools import (
     ALLOWED_TOOLS,
@@ -280,6 +284,55 @@ def test_the_simulated_batch_sees_the_tool_set_it_always_saw(settings, scorer, r
     """Load-bearing for every committed number: enabling the reads on the live lane must
     not have changed what the 500-invoice batch behind `docs/EVALUATION.md` could do."""
     assert permitted_tools("simulated") == ALLOWED_TOOLS
+
+
+# ------------------------------------------------------------------ the turn itself
+#
+# ``query()`` is replaced with a fake async generator in both tests below, never a real
+# model — same reason as everywhere else in this file: what is under test is the frame
+# around the SDK, not anything Claude decides. Neither test spends a token or touches the
+# network.
+
+
+async def test_a_turn_that_reports_is_error_is_not_counted_as_a_conclusion(monkeypatch):
+    """The regression this closes: ``query()`` returning without raising is not proof the
+    turn succeeded. ``error_max_turns`` ends a conversation the same way a clean one does,
+    as far as an ``async for`` is concerned — before this, ``_run_one`` handed back
+    whatever partial summary text it had seen and the caller in ``run_batch`` counted the
+    invoice as completed rather than failed."""
+
+    async def fake_query(*, prompt, options):
+        if False:  # pragma: no cover — makes this an async generator, never runs
+            yield
+        yield ResultMessage(
+            subtype="error_max_turns",
+            duration_ms=1,
+            duration_api_ms=1,
+            is_error=True,
+            num_turns=6,
+            session_id="fake-session",
+            errors=["ran out of turns before reaching a conclusion"],
+        )
+
+    monkeypatch.setattr("agent.orchestrator.query", fake_query)
+    with pytest.raises(AgentTurnError, match="error_max_turns"):
+        await _run_one("inv_fake", datetime(2026, 5, 1, tzinfo=UTC), object(), timeout_seconds=5)
+
+
+async def test_a_stalled_turn_times_out_instead_of_hanging_the_batch(monkeypatch):
+    """Nothing previously bounded how long a single ``query()`` call could hang — only how
+    many turns it could take. A transport that stalls mid-response used to block the batch
+    on that one invoice forever; now it raises like any other per-invoice failure and the
+    loop steps over it."""
+
+    async def fake_query(*, prompt, options):
+        await asyncio.sleep(10)
+        if False:  # pragma: no cover — makes this an async generator, never runs
+            yield
+
+    monkeypatch.setattr("agent.orchestrator.query", fake_query)
+    with pytest.raises(TimeoutError):
+        await _run_one("inv_fake", datetime(2026, 5, 1, tzinfo=UTC), object(), timeout_seconds=0.05)
 
 
 # ------------------------------------------------------------------ the report

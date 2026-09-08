@@ -46,6 +46,8 @@ class Settings:
     agent_model: str
     explainer_model: str
     max_turns_per_item: int
+    agent_timeout_seconds: int
+    explainer_timeout_seconds: int
 
     seed: int
 
@@ -135,5 +137,12 @@ def get_settings() -> Settings:
         agent_model=_env("WINBACK_AGENT_MODEL", "claude-sonnet-5") or "claude-sonnet-5",
         explainer_model=_env("WINBACK_EXPLAINER_MODEL", "claude-opus-5") or "claude-opus-5",
         max_turns_per_item=_env_int("WINBACK_MAX_TURNS_PER_ITEM", 6),
+        # Wall-clock ceilings on a single `query()` call, not on turn count. `max_turns`
+        # bounds how many round trips an invoice can take; nothing previously bounded how
+        # long any one of them could hang — a stalled transport or an unresponsive model
+        # blocked the batch invoice-by-invoice, and blocked the `/explain` endpoint's
+        # request thread outright, since that call sits inline in an HTTP handler.
+        agent_timeout_seconds=_env_int("WINBACK_AGENT_TIMEOUT_SECONDS", 240),
+        explainer_timeout_seconds=_env_int("WINBACK_EXPLAINER_TIMEOUT_SECONDS", 60),
         seed=_env_int("WINBACK_SEED", 20260905),
     )

@@ -128,7 +128,26 @@ def _binding_refusal(plan: Any) -> str | None:
 
 @dataclass
 class AuditWriter:
-    """Appends to ``decisions`` and ``audit_log``. Never updates either."""
+    """Appends to ``decisions`` and ``audit_log``. Never updates either.
+
+    ``record_decision`` and ``record_action`` each open and commit their own
+    ``agent_connection()`` — two transactions, not one — because they are not two halves
+    of a single event. ``record_decision`` fires on ``compliance_guardrail``'s own tool
+    call; the presentment it authorises, if the agent makes it at all, is a *separate*
+    tool call the model chooses to place later in the same turn, or a later turn, or
+    never (see ``record_silence``: an approval the agent obtained and then let expire is
+    itself a fact this audit trail has to be able to state). Holding one DB transaction
+    open across that gap — an unbounded stretch of model think time and possibly another
+    tool round trip — to force the two into one commit would trade a narrow crash window
+    for a lock held for the length of an LLM turn, and would make an approval that is
+    genuinely never spent unrepresentable rather than correctly recorded as unspent.
+    A process that dies between the two calls does leave a ``decisions`` row with no
+    matching ``audit_log`` row — that is the crash window ``agent/orchestrator.py``'s
+    ``_already_worked`` resume path exists to find and re-work, and the reason
+    ``record_decision``'s trailing counter is read from the table rather than kept in
+    process memory (see its docstring): so that re-working the same invoice after a crash
+    regenerates a fresh ``decision_id`` instead of colliding with the orphaned one.
+    """
 
     bench: Workbench
     run_id: str

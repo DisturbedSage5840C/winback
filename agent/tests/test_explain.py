@@ -9,6 +9,9 @@ money and non-determinism to do it.
 
 from __future__ import annotations
 
+import asyncio
+import dataclasses
+
 import pytest
 
 from agent.explain import DecisionNotFound, _decision_record, explain_decision, explainer_options
@@ -33,6 +36,33 @@ async def test_a_decision_that_was_never_written_is_never_narrated():
     so a bogus invoice id fails fast with no network call and no cost."""
     with pytest.raises(DecisionNotFound):
         await explain_decision("no_such_invoice_id")
+
+
+@pytest.mark.db
+async def test_a_stalled_explainer_times_out_instead_of_hanging_the_request(monkeypatch):
+    """This is the one call in ``agent/`` that sits inline in an HTTP request
+    (``api/main.py``'s ``/invoices/{id}/explain``), so an unbounded wait here is an
+    unbounded request, not just a slow batch item. ``query()`` is faked to stall past a
+    shortened timeout — no real model, no cost, no non-determinism, same as every other
+    test in this file. Needs a real decision on record so the call reaches ``query()`` at
+    all; skips on an empty database, which is a legitimate state."""
+    with read_connection() as conn:
+        row = conn.execute("SELECT invoice_id, run_id FROM decisions LIMIT 1").fetchone()
+    if row is None:
+        pytest.skip("no decision in this database to read back")
+
+    async def fake_query(*, prompt, options):
+        await asyncio.sleep(10)
+        if False:  # pragma: no cover — makes this an async generator, never runs
+            yield
+
+    monkeypatch.setattr("agent.explain.query", fake_query)
+    monkeypatch.setattr(
+        "agent.explain.get_settings",
+        lambda: dataclasses.replace(get_settings(), explainer_timeout_seconds=0.05),
+    )
+    with pytest.raises(TimeoutError):
+        await explain_decision(row["invoice_id"], row["run_id"])
 
 
 @pytest.mark.db

@@ -17,6 +17,7 @@ were compromised.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -84,21 +85,30 @@ async def explain_decision(invoice_id: str, run_id: str | None = None) -> str:
     Raises :class:`DecisionNotFound` if no decision has been written yet — narrating a
     decision that does not exist would be inventing one, which is exactly the kind of
     unauditable step the rest of ``agent/`` is built to avoid.
+
+    Raises ``asyncio.TimeoutError`` if the call runs longer than
+    ``settings.explainer_timeout_seconds``. This is the one call in ``agent/`` that sits
+    inline in an HTTP request (``api/main.py``'s ``/invoices/{id}/explain``), so an
+    unbounded wait here is an unbounded request, not just a slow batch item.
     """
     record = _decision_record(invoice_id, run_id)
     if record is None:
         raise DecisionNotFound(invoice_id)
 
-    options = explainer_options(get_settings())
+    settings = get_settings()
+    options = explainer_options(settings)
     prompt = (
         "Explain this automated payment-recovery decision, from the record alone:\n\n"
         f"{json.dumps(record, default=str, indent=2)}"
     )
 
-    paragraph = ""
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, AssistantMessage):
-            for block in message.content:
-                if isinstance(block, TextBlock) and block.text.strip():
-                    paragraph = block.text.strip()
-    return paragraph
+    async def _consume() -> str:
+        paragraph = ""
+        async for message in query(prompt=prompt, options=options):
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock) and block.text.strip():
+                        paragraph = block.text.strip()
+        return paragraph
+
+    return await asyncio.wait_for(_consume(), timeout=settings.explainer_timeout_seconds)

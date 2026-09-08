@@ -220,6 +220,27 @@ def test_an_invoice_with_no_decision_has_no_explanation(client: TestClient):
     assert response.status_code == 404
 
 
+def test_a_stalled_explainer_is_a_504_not_a_hang(client: TestClient, a_run: str, monkeypatch):
+    """``agent.explain.explain_decision`` bounds its own wait with
+    ``settings.explainer_timeout_seconds`` and raises ``asyncio.TimeoutError`` when it
+    expires — this test only has to check that this handler turns that into a client-
+    facing 504 instead of propagating a bare 500, so ``explain_decision`` itself is
+    replaced rather than actually made to stall. Needs a real decision on record to reach
+    that call at all; skips if this run left nothing in the worklist, the same legitimate
+    empty state ``test_the_drill_down_returns_the_losing_candidates_too`` skips on."""
+    rows = client.get(f"/runs/{a_run}/worklist", params={"limit": 1}).json()["rows"]
+    if not rows:
+        pytest.skip("this run touched no at-risk invoice still in the worklist")
+    invoice_id = rows[0]["invoice_id"]
+
+    async def fake_explain_decision(invoice_id: str, run_id: str | None = None) -> str:
+        raise TimeoutError
+
+    monkeypatch.setattr("api.main.explain_decision", fake_explain_decision)
+    response = client.get(f"/invoices/{invoice_id}/explain", params={"run_id": a_run})
+    assert response.status_code == 504
+
+
 def test_the_trace_cursors_on_the_id_and_never_replays_a_row(client: TestClient, a_run: str):
     """``event_id`` is ``BIGSERIAL``. Cursoring on ``ts_utc`` instead would either skip or
     duplicate a row whenever two events shared a microsecond, and the live trace is the

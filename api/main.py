@@ -453,6 +453,8 @@ async def invoice_explanation(invoice_id: str, run_id: str | None = None) -> dic
             _EXPLANATION_CACHE[decision_id] = await explain_decision(invoice_id, run_id)
         except DecisionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail="explainer timed out") from exc
         except ClaudeSDKError as exc:
             raise HTTPException(status_code=502, detail="explainer unavailable") from exc
 

@@ -93,6 +93,16 @@ class ExecutionRequest:
     execute_at: datetime
     attempt_number: int
 
+    #: This invoice's Nth execution in the batch, of *either* kind, 1-indexed. Not the
+    #: same number as ``attempt_number``, which counts retries only and is what the
+    #: NPCI cap and ``payment_attempts`` care about. ``sequence`` exists only so the
+    #: live lane can build a ``reference_id`` that stays unique per invoice per batch —
+    #: a nudge and the retry that follows it are both real Razorpay entities, and both
+    #: used to be handed the same ``attempt_number`` because a nudge never advances it.
+    #: Defaults to 1 for callers (mainly tests) that construct a request without a
+    #: batch around it and have exactly one execution to number.
+    sequence: int = 1
+
     #: Only for the live lane, and only ever a test-mode entity.
     rzp_customer_id: str | None = None
     rzp_token_id: str | None = None

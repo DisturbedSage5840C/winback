@@ -137,7 +137,7 @@ def test_the_live_budget_covers_at_least_one_invoice(settings):
     for budget in (1, 2, 10, 50):
         covered = max(1, budget // LIVE_CALLS_PER_INVOICE)
         assert covered >= 1
-    assert LIVE_CALLS_PER_INVOICE >= 2  # an order and a link, per presentment
+    assert LIVE_CALLS_PER_INVOICE >= 2  # a nudge link and a retry link, worst case
 
 
 # ------------------------------------------------------------------ the options

@@ -134,6 +134,13 @@ class LiveRazorpayAdapter:
         dashboard can be traced back to the decision that created it, and ``notes``
         carries the redacted customer hash — never the customer id, and never a
         contact detail.
+
+        Built from ``request.sequence``, not ``request.attempt_number``. The latter
+        counts retries only, so a nudge and the retry that follows it on the same
+        invoice used to be handed the identical number — Razorpay enforces uniqueness
+        on a payment link's ``reference_id``, and the second call was rejected. The
+        leading letter is the action kind (``r``/``n``), which also makes the id
+        readable in the Razorpay dashboard without cross-referencing the audit trail.
         """
         return self._call(
             "POST",
@@ -143,7 +150,7 @@ class LiveRazorpayAdapter:
                 "currency": "INR",
                 "accept_partial": False,
                 "description": description,
-                "reference_id": f"{request.invoice_id}-a{request.attempt_number}",
+                "reference_id": f"{request.invoice_id}-{str(request.kind)[0]}{request.sequence}",
                 "notify": NOTIFY_OFF,
                 "reminder_enable": False,
                 "notes": {
@@ -160,24 +167,22 @@ class LiveRazorpayAdapter:
     def present(self, request: ExecutionRequest) -> ExecutionResult:
         """The presentment this account cannot make, and what stands in for it.
 
-        Creates a real order and a real payment link. Returns ``DEFERRED`` — never
-        ``RECOVERED`` — because no money has moved and none will until a human pays
-        the link. The detail string says why in words, so the reason survives into the
-        audit trail rather than living only in this docstring.
+        Creates a real payment link. Returns ``DEFERRED`` — never ``RECOVERED`` —
+        because no money has moved and none will until a human pays the link. The
+        detail string says why in words, so the reason survives into the audit trail
+        rather than living only in this docstring.
+
+        This used to also create an ``/orders`` entity before the link, on the theory
+        that a presentment ought to look like one. It never did: nothing associated the
+        order with the link — Razorpay's Payment Links API takes no ``order_id``, and a
+        link creates its own order internally — so it was a second real API call per
+        presentment that produced an entity nothing referenced afterwards. Removed:
+        the link is the whole presentment artifact, and this also brings the true cost
+        of a nudge-then-retry sequence down to exactly ``LIVE_CALLS_PER_INVOICE``.
         """
         if request.kind is not ActionKind.RETRY:
             raise AdapterError(f"present() is for retries, not {request.kind}")
 
-        order = self._call(
-            "POST",
-            "/orders",
-            {
-                "amount": request.amount_paise,
-                "currency": "INR",
-                "receipt": f"{request.invoice_id}-a{request.attempt_number}"[:40],
-                "notes": {"invoice_id": request.invoice_id, "customer_hash": request.customer_hash},
-            },
-        )
         link = self._create_link(request, f"Winback recovery · attempt {request.attempt_number}")
 
         return ExecutionResult(
@@ -192,7 +197,6 @@ class LiveRazorpayAdapter:
                 "with notifications suppressed; nothing is recovered until it is paid."
             ),
             metadata={
-                "order_id": order.get("id"),
                 "payment_link_id": link.get("id"),
                 "short_url": link.get("short_url"),
                 "notify_echoed": link.get("notify"),

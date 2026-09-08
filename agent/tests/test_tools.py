@@ -183,6 +183,26 @@ async def test_a_nudge_does_not_consume_a_legal_attempt(tools, bench, invoice_id
     assert bench.attempts_used(invoice_id) == before
 
 
+async def test_actions_taken_counts_every_kind_unlike_attempts_used(tools, bench, invoice_id):
+    """The counter the live lane's ``reference_id`` is built from. A nudge advances it
+    where ``attempts_used`` does not — which is the whole point: two real Razorpay
+    entities for the same invoice must never be numbered identically just because only
+    one of them is a legal NPCI attempt (see ``agent/adapters/live_razorpay.py``)."""
+    now = _now(bench, invoice_id).isoformat()
+    await tools["assess_recoverability"].handler({"invoice_id": invoice_id, "now": now})
+    approved = await tools["compliance_guardrail"].handler(
+        {"invoice_id": invoice_id, "action": "nudge", "execute_at": now}
+    )
+    if '"authorised": true' not in approved["content"][0]["text"].lower():
+        pytest.skip("nudge not permitted for this invoice")
+
+    before_actions = bench.actions_taken(invoice_id)
+    before_attempts = bench.attempts_used(invoice_id)
+    await tools["simulated_notify"].handler({"invoice_id": invoice_id, "execute_at": now})
+    assert bench.actions_taken(invoice_id) == before_actions + 1
+    assert bench.attempts_used(invoice_id) == before_attempts
+
+
 async def test_an_unknown_invoice_is_refused_by_every_tool(tools):
     for name, args in (
         ("assess_recoverability", {"invoice_id": "inv_nope", "now": "2026-05-01T09:00:00+05:30"}),

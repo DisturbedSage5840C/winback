@@ -108,9 +108,12 @@ Things that are true and worth knowing:
   attempting a variation.
 """
 
-#: A live presentment costs two API calls (an order and a payment link); a live nudge
-#: costs one. Two is the conservative figure, and it is what an unbounded live run is
-#: divided by to decide how many invoices the call budget can actually cover.
+#: A live presentment costs one API call (a payment link); a live nudge costs one too.
+#: Two — a nudge followed by the retry it precedes — is the conservative per-invoice
+#: figure, and it is what an unbounded live run is divided by to decide how many
+#: invoices the call budget can actually cover. (Presentment used to also create an
+#: ``/orders`` entity nothing else referenced; removed in ``live_razorpay.py``, which is
+#: what brought this down from three worst-case calls to two.)
 LIVE_CALLS_PER_INVOICE = 2
 
 

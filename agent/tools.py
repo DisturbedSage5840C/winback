@@ -210,6 +210,19 @@ class Workbench:
         )
         return 1 + spent
 
+    def actions_taken(self, invoice_id: str) -> int:
+        """Every execution recorded for this invoice so far in this batch, either kind.
+
+        Unlike :meth:`attempts_used`, this counts nudges too. It exists only to feed
+        ``ExecutionRequest.sequence``, which the live lane uses to keep a Razorpay
+        ``reference_id`` unique per invoice per batch — a nudge and the retry that
+        follows it are both real Razorpay entities, and confusing this with the
+        NPCI-cap count is exactly the bug this method was added to stop repeating.
+        Same resume-fragility as ``attempts_used``, for the same reason: ``self.executions``
+        is this process's own memory.
+        """
+        return sum(1 for row in self.executions if row["invoice_id"] == invoice_id)
+
 
 def _prior_for(case: Any, attempts_used: int):
     from ml.features import Candidate, PriorState
@@ -397,6 +410,7 @@ def _execute(
         amount_paise=case.invoice.amount_paise,
         execute_at=execute_at,
         attempt_number=bench.attempts_used(invoice_id) + 1,
+        sequence=bench.actions_taken(invoice_id) + 1,
     )
 
     try:

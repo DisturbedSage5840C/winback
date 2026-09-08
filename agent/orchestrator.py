@@ -39,6 +39,7 @@ from datetime import datetime, timedelta
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
+    CLIConnectionError,
     ResultMessage,
     TextBlock,
     query,
@@ -197,8 +198,17 @@ FATAL_TO_THE_BATCH = (
 #: code. Deliberately broad — a false positive costs one wasted probe of a transport that
 #: turns out to be healthy, and the run continues on the lane it already had. A false
 #: negative costs the batch, which is the outcome the Day-8 drill exists to rule out.
+#:
+#: ``"mcp"`` itself used to be one of these markers, and it was wrong: every tool in this
+#: system is named ``mcp__<server>__<tool>``, so the substring appears in the gate's own
+#: denial text (``agent/gate.py``'s ``DENIED_TOOL`` message quotes the tool name back at
+#: the model) as readily as in a transport death. That misread a plain guardrail denial as
+#: the pipe dying, demoting the lane and re-running a money-moving tool call for an
+#: invoice whose only problem was asking for the wrong tool. :func:`_looks_like_mcp_failure`
+#: now checks the SDK's own ``CLIConnectionError`` type first, which names the outer CLI
+#: transport unambiguously; these strings remain as the fallback for the transport dying in
+#: ways the SDK surfaces as prose instead of a type.
 MCP_TRANSPORT_FAILURE = (
-    "mcp",
     "docker",
     "stdio",
     "transport",
@@ -209,6 +219,15 @@ MCP_TRANSPORT_FAILURE = (
 
 
 def _looks_like_mcp_failure(exc: Exception) -> bool:
+    """Did the Razorpay transport die, or did this invoice just fail on its own merits?
+
+    ``CLIConnectionError`` is checked by type first because it is unambiguous — the SDK
+    raises it specifically for the outer Claude Code CLI subprocess connection dying, never
+    for a tool call the model made wrong. Everything else is prose-sniffed, because an
+    stdio child that is killed surfaces as a sentence, not a code.
+    """
+    if isinstance(exc, CLIConnectionError):
+        return True
     text = f"{type(exc).__name__}: {exc}".lower()
     return any(marker in text for marker in MCP_TRANSPORT_FAILURE)
 

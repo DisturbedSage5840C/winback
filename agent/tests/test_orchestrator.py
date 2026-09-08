@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
+from claude_agent_sdk import CLIConnectionError
 
 from agent.adapters.base import ExecutionMode
 from agent.adapters.simulated import SimulatedAdapter
@@ -252,6 +253,26 @@ def test_a_transport_death_is_charged_to_the_transport(exc):
 def test_an_invoice_that_fails_on_its_own_merits_does_not_demote_the_lane(exc):
     """A demotion is one-way and costs the rest of the batch its best transport, so a bug
     in one invoice's data must not spend it."""
+    assert _looks_like_mcp_failure(exc) is False
+
+
+def test_the_sdk_connection_error_is_charged_to_the_transport_by_type_not_prose():
+    """``CLIConnectionError`` is the SDK's own name for the outer CLI subprocess dying —
+    unambiguous, and worth trusting over string-sniffing."""
+    assert _looks_like_mcp_failure(CLIConnectionError("unable to connect to Claude Code")) is True
+
+
+def test_a_denied_tool_call_naming_an_mcp_tool_does_not_demote_the_lane():
+    """The regression this closes: every tool in this system is named
+    ``mcp__<server>__<tool>``, and the gate's own denial message
+    (``agent/gate.py``'s ``DENIED_TOOL`` text) quotes the tool name back at the model. A
+    bare ``"mcp"`` substring marker used to read that plain guardrail denial as the
+    transport dying, demoting the lane and re-running a money-moving tool call for an
+    invoice that never touched the transport at all."""
+    exc = RuntimeError(
+        "tool_not_permitted: mcp__winback__execute_recovery is not permitted in this "
+        "batch. Permitted tools are mcp__winback__present_recovery_offer."
+    )
     assert _looks_like_mcp_failure(exc) is False
 
 

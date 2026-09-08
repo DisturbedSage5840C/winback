@@ -59,10 +59,16 @@ SERVER_NAME = "winback"
 MONEY_TOOL = f"mcp__{SERVER_NAME}__execute_recovery"
 GUARDRAIL_TOOL = f"mcp__{SERVER_NAME}__compliance_guardrail"
 
+#: The other gated tool — named for the same reason as :data:`MONEY_TOOL`, so
+#: ``agent.gate`` can map a tool name to its :class:`~compliance.guardrail.ActionKind`
+#: by an explicit lookup instead of an ``if MONEY_TOOL else nudge`` default that would
+#: silently misclassify any third tool ever added to :data:`GATED_TOOLS`.
+NUDGE_TOOL = f"mcp__{SERVER_NAME}__simulated_notify"
+
 #: The tools that act on the customer relationship. One presents a mandate, the other
 #: messages a person. Both require a guardrail approval on record, and both are therefore
 #: kept OUT of the SDK's ``allowed_tools`` — see :data:`PREAPPROVED_TOOLS`.
-GATED_TOOLS = (f"mcp__{SERVER_NAME}__simulated_notify", MONEY_TOOL)
+GATED_TOOLS = (NUDGE_TOOL, MONEY_TOOL)
 
 #: Handed to ``ClaudeAgentOptions.allowed_tools``, and deliberately *not* the full set.
 #:

@@ -36,12 +36,22 @@ from claude_agent_sdk import (
     ToolPermissionContext,
 )
 
-from agent.tools import ALLOWED_TOOLS, GATED_TOOLS, MONEY_TOOL, Workbench, approval_key
+from agent.tools import ALLOWED_TOOLS, GATED_TOOLS, MONEY_TOOL, NUDGE_TOOL, Workbench, approval_key
+from compliance.guardrail import ActionKind
 
 #: Imported rather than restated. When this file kept its own copy of the gated set, the
 #: SDK's ``allowed_tools`` could pre-approve a tool this gate still believed it was
 #: guarding — two lists that agreed on paper and not in the running process.
 _GATED = frozenset(GATED_TOOLS)
+
+#: An explicit map, not ``"retry" if tool_name == MONEY_TOOL else "nudge"``. The old form
+#: classified *anything else gated* as a nudge — true today only because
+#: :data:`GATED_TOOLS` happens to hold exactly these two tools. A third gated tool would
+#: have been silently approved as a nudge under whatever slot the guardrail approved for
+#: an entirely different action. This dict is checked against ``_GATED`` below at import
+#: time, so the two can never drift apart without the process failing to start.
+_KIND_BY_TOOL = {MONEY_TOOL: str(ActionKind.RETRY), NUDGE_TOOL: str(ActionKind.NUDGE)}
+assert set(_KIND_BY_TOOL) == _GATED, "every gated tool must have a known ActionKind"
 
 #: What the money-moving tools' arguments are called. Named here so a rename in
 #: ``agent.tools`` that this file does not follow fails loudly at the gate instead of
@@ -55,7 +65,13 @@ MALFORMED = "malformed_gated_call"
 
 
 def _kind_for(tool_name: str) -> str:
-    return "retry" if tool_name == MONEY_TOOL else "nudge"
+    """The :class:`~compliance.guardrail.ActionKind` a gated tool call is an instance of.
+
+    Only ever called on a name already confirmed to be in :data:`GATED_TOOLS` — see the
+    module-level assertion pinning ``_KIND_BY_TOOL``'s keys to that set — so this raises
+    rather than guesses if that invariant is ever broken.
+    """
+    return _KIND_BY_TOOL[tool_name]
 
 
 def make_money_gate(

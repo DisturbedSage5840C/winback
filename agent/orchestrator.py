@@ -40,6 +40,7 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     CLIConnectionError,
+    ResultError,
     ResultMessage,
     TextBlock,
     query,
@@ -184,8 +185,9 @@ class BatchReport:
 #: instead of grinding through the remainder. The first full batch did not: it hit an
 #: account quota at 85/190 and then reported 105 further "errors" that were all the same
 #: sentence, which buried the one fact worth reading and spent twenty minutes doing it.
-#: Matched case-insensitively against the exception text, because these arrive as prose
-#: inside ``ResultError`` and there is no error code to switch on.
+#: Matched case-insensitively against the exception text — the fallback for the halts
+#: that never carry a machine-readable code at all, such as Claude Code's own session
+#: limit. See :data:`FATAL_API_ERROR_STATUS` for the one marker below that does have one.
 FATAL_TO_THE_BATCH = (
     "session limit",
     "usage limit",
@@ -193,6 +195,14 @@ FATAL_TO_THE_BATCH = (
     "credit balance",
     "insufficient credit",
 )
+
+#: The HTTP status :class:`~claude_agent_sdk.ResultError` carries on its own
+#: ``api_error_status`` attribute when the CLI's failure was itself a rate-limited API
+#: call — the structured equivalent of this module's ``"rate limit"`` prose marker above,
+#: and checked first for the same reason :func:`_looks_like_mcp_failure` checks
+#: ``CLIConnectionError`` by type before falling back to prose: a status code cannot be
+#: phrased differently by a future CLI release the way a sentence can.
+FATAL_API_ERROR_STATUS = 429
 
 
 #: Substrings that mark a failure as the Razorpay transport dying rather than the invoice
@@ -243,6 +253,8 @@ def _is_fatal_to_the_batch(exc: Exception) -> bool:
     condition of the environment, and continuing past it converts one legible failure into
     a hundred illegible ones while the run's own progress counter keeps climbing.
     """
+    if isinstance(exc, ResultError) and exc.api_error_status == FATAL_API_ERROR_STATUS:
+        return True
     text = str(exc).lower()
     return any(marker in text for marker in FATAL_TO_THE_BATCH)
 

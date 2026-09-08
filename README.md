@@ -89,7 +89,7 @@ it today would believe it works.
 
 Complete through **Day 10 of 10** (26 Aug → 5 Sep 2026), tagged
 [**v1.0.2**](https://github.com/DisturbedSage5840C/winback/releases/tag/v1.0.2).
-**662 tests passing, 99% coverage on `compliance/`.**
+**664 tests passing, 99% coverage on `compliance/`.**
 
 | | |
 |---|---|

@@ -14,7 +14,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
-from claude_agent_sdk import CLIConnectionError, ResultMessage
+from claude_agent_sdk import CLIConnectionError, ResultError, ResultMessage
 
 from agent.adapters.base import ExecutionMode
 from agent.adapters.simulated import SimulatedAdapter
@@ -396,6 +396,26 @@ def test_an_exhausted_quota_stops_the_batch():
     )
     for text in limits:
         assert _is_fatal_to_the_batch(RuntimeError(text)) is True
+
+
+def test_a_rate_limited_result_error_stops_the_batch_by_status_not_prose():
+    """``ResultError.api_error_status`` is the structured signal the module-level comment
+    used to say didn't exist. Checked here with a message that carries none of the prose
+    markers at all — so a text-only match would say False, and only the type-and-status
+    check makes this True. Mirrors how :func:`_looks_like_mcp_failure` checks
+    ``CLIConnectionError`` by type before ever looking at the exception's text."""
+    exc = ResultError("boom", data={"subtype": "error_during_execution", "api_error_status": 429})
+    assert _is_fatal_to_the_batch(exc) is True
+
+
+def test_a_non_rate_limit_result_error_falls_back_to_prose():
+    """A ``ResultError`` whose status isn't the rate-limit one still gets the ordinary
+    prose check, same as any other exception — the status check adds a way to say True,
+    it does not replace the fallback."""
+    exc = ResultError(
+        "bad request", data={"subtype": "error_during_execution", "api_error_status": 400}
+    )
+    assert _is_fatal_to_the_batch(exc) is False
 
 
 def test_an_ordinary_bad_invoice_does_not_stop_the_batch():

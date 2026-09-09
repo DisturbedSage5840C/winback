@@ -96,8 +96,8 @@ in §05.
 | Dataset | **frozen** at fingerprint `c32b2b063cd87707` — 4,000 mandates, 30,210 invoices, 33,866 attempts, 786 censored (2.3%) |
 | Realism gate | 19 checks — **13 PASS · 6 ungraded `[REPORT]` · 0 FAIL** |
 | Model | **v1 frozen** — XGBoost + sigmoid calibration, chosen out-of-fold, scored once on the held-out cohort |
-| Headline honesty number | test ECE **0.034** where the merchant had data, **0.442** where it did not, still correctly ordered there |
-| Headline result | **−66 compliance violations vs the naive baseline, CI [−96, −42]**, at ₹28 more legally recovered — a difference whose interval spans zero, and is reported as a tie |
+| Headline honesty number | test ECE **0.032** where the merchant had data, **0.471** where it did not, still correctly ordered there |
+| Headline result | **−66 compliance violations vs the naive baseline, CI [−96, −42]**, at ₹927 more legally recovered — a difference whose interval touches zero at its lower edge, and is reported as a tie |
 | Docs | 4,516 lines across 11 files, all committed — `WHAT_BROKE.md` alone is 1,563, at 44 entries |
 | License | **Apache-2.0**, with a `NOTICE` that carries the non-affiliation and not-legal-advice statements into any fork. Dependency tree inventoried: all permissive, psycopg (LGPL-3.0-only) referenced and never redistributed |
 | Agent | full batch **190/190 unattended, exit 0**; live cohort carries real `plink_…` IDs |
@@ -200,24 +200,25 @@ rate.** That reads consistently in five places now.
 tie.** Arms A/B/C/D replay the same 190 failed invoices in the held-out test cohort
 against the same oracle seeds — the seed key deliberately excludes `run_id` and `arm`, so
 the coin flip for any `(attempt, action, hour)` is identical across arms and the
-comparison is genuinely paired. Winback recovers ₹6,39,626 legally; retry-everything
-recovers ₹6,39,598. The paired difference is **+₹28, CI [−₹2,697, ₹2,781]** — it contains
-zero, and `EVALUATION.md` §07 says in bold that Winback does not beat retry-everything on
-rupees. What separates them is **66 compliance violations against zero, CI [−96, −42]**.
-The naive policy reaches the same money by a route a merchant cannot ship.
+comparison is genuinely paired. Winback recovers ₹6,40,525 legally; retry-everything
+recovers ₹6,39,598. The paired difference is **+₹927, CI [₹0, ₹2,781]** — it touches
+zero at its lower edge rather than sitting inside it, and `EVALUATION.md` §07 says in
+bold that Winback does not beat retry-everything on rupees. What separates them is **66
+compliance violations against zero, CI [−96, −42]**. The naive policy reaches the same
+money by a route a merchant cannot ship.
 
 **A test now prevents that tie from quietly becoming a win.**
 `test_the_money_claim_against_retry_everything_is_a_tie_and_must_stay_one` asserts the
-interval still spans zero. If a later change makes Winback look better on money, that
-test fails and someone has to decide deliberately whether the improvement is real or
-whether the harness has started flattering the submission.
+interval does not exclude zero. If a later change makes Winback look better on money,
+that test fails and someone has to decide deliberately whether the improvement is real
+or whether the harness has started flattering the submission.
 
 **Measurement separated two baselines that a violations count alone would have made look
 alike.** All 66 of arm B's violations are `bd_hard_not_retryable` — re-presenting
 mandates the bank has permanently declined — and they recovered **₹0**. Arm C's 120
 violations are mostly `peak_window`, and they recovered **₹5,04,247: 90% of everything
 arm C appears to collect.** Held to the law, the legacy policy collects ₹53,490 against
-Winback's ₹6,39,626. That is the strongest single fact in the evaluation, and it exists
+Winback's ₹6,40,525. That is the strongest single fact in the evaluation, and it exists
 only because recovered rupees are attributed per violating presentment rather than
 counted in aggregate.
 
@@ -567,8 +568,8 @@ front end on Razorpay's motion language · 8+ hrs/day).
 
 | Risk | Standing response | Changed? |
 |---|---|---|
-| Model does not beat retry-everything on raw ₹ | Headline is ₹/legal-attempt; arm B is disqualified on legality, decided before results existed | **Realised, exactly as anticipated.** The money difference is +₹28 with an interval spanning zero. The pre-committed response is the one now in `EVALUATION.md` §07, and a test keeps the tie a tie |
-| Simulator circularity challenged in the panel | Raised first, in the README and on camera, with the observed-vs-censored ECE gap (0.034 vs 0.442) as evidence it was taken seriously | Stronger now than planned — the covariate finding is a better example than the one it replaced |
+| Model does not beat retry-everything on raw ₹ | Headline is ₹/legal-attempt; arm B is disqualified on legality, decided before results existed | **Realised, exactly as anticipated.** The money difference is +₹927 with an interval that touches zero at its lower edge. The pre-committed response is the one now in `EVALUATION.md` §07, and a test keeps the tie a tie |
+| Simulator circularity challenged in the panel | Raised first, in the README and on camera, with the observed-vs-censored ECE gap (0.032 vs 0.471) as evidence it was taken seriously | Stronger now than planned — the covariate finding is a better example than the one it replaced |
 | Next.js eats Days 7–8 | Overview, worklist, drill-down and the compliance panel are mandatory; the evaluation page may degrade to committed PNGs | **Closed, and the fallback was never needed.** Both days landed inside their gates and the evaluation page renders live from the API rather than from PNGs. The risk was mis-named: it was never the framework — the delivered stack is Vite, not Next.js — it was that the frontend's types were guessed rather than measured, which is what actually cost the time |
 | `HookMatcher` shape differs from published docs | Day 6: read the installed types. `can_use_tool` is the load-bearing gate; audit hooks can fall back to wrapping the adapter | **Closed.** Read `claude_agent_sdk.types` directly and the loose part of the docs was real: `matcher=None` matches every tool, `tool_response` arrives as a bare list, and exceptions raised inside a `PostToolUse` hook are swallowed. All three are in `WHAT_BROKE.md`. No fallback needed |
 | A batch halts part-way through | `audit_log` is the checkpoint; re-running the same `--run-id` resumes rather than restarting, which is a correctness property before a convenience one — NPCI counts presentments, not batches | **Realised twice and it worked both times.** Once when the process was killed, twice on the account's session limit. `batch_v2` resumed from 24, from 50 and from 75, with the halt reason and the resume command in the report line each time. The third halt paid for itself: it exposed a resume-query defect that would have stranded an approved invoice |

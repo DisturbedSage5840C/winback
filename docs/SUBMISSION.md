@@ -34,8 +34,8 @@ not at the wire"*, and a form that closes at midnight has closed early before.
 > cannot spend money without a guardrail approval on record. Every action lands in an
 > append-only audit trail enforced by grants and triggers, not by convention. On a
 > held-out cohort of 190 failed invoices, replayed against identical oracle seeds by four
-> arms, Winback recovers ₹6,39,626 against the naive baseline's ₹6,39,598 — a tie, and
-> reported as one — on thirteen fewer legal attempts and with **0 compliance violations
+> arms, Winback recovers ₹6,40,525 against the naive baseline's ₹6,39,598 — a tie, and
+> reported as one — on eleven fewer legal attempts and with **0 compliance violations
 > against 66**, interval [−96, −42].
 
 ## The bar, clause by clause
@@ -65,11 +65,12 @@ way to be caught overstating.
 | A — never retry | ₹0 | 0 | 0 | — |
 | B — retry everything | ₹6,39,598 | 210 | **66** | ₹3,045.70 |
 | C — legacy dunning | ₹53,490 | 63 | **120** | ₹849.05 |
-| **D — Winback** | **₹6,39,626** | 197 | **0** | **₹3,246.83** |
+| **D — Winback** | **₹6,40,525** | 199 | **0** | **₹3,218.72** |
 
-Money difference vs B: **+₹28, interval [−₹2,697, ₹2,781]** — spans zero, so it is a tie
-and is reported as a tie. Violations difference: **−66, interval [−96, −42]** — excludes
-zero. That asymmetry *is* the result.
+Money difference vs B: **+₹927, interval [₹0, ₹2,781]** — touches zero at its lower edge
+rather than sitting inside it, but the reading is the same: a tie, reported as a tie.
+Violations difference: **−66, interval [−96, −42]** — excludes zero. That asymmetry *is*
+the result.
 
 **Agent batch** (`batch_v2`, the run shown in the video): 190 invoices concluded,
 **₹3,57,468 recovered, zero compliance violations**, and **190 audit rows for 190
@@ -87,8 +88,8 @@ an approval with nothing behind it; re-working an invoice that *had* concluded w
 presented a mandate twice, and NPCI counts presentments.
 
 **Build:** 612 tests passing · 99% coverage on `compliance/` · dataset frozen at
-`c32b2b063cd87707` (4,000 mandates, 30,210 invoices, 33,866 attempts) · test ECE **0.034**
-where the merchant had data, **0.442** where it did not, still correctly ranked there ·
+`c32b2b063cd87707` (4,000 mandates, 30,210 invoices, 33,866 attempts) · test ECE **0.032**
+where the merchant had data, **0.471** where it did not, still correctly ranked there ·
 44 entries in [`WHAT_BROKE.md`](WHAT_BROKE.md).
 
 ## What to say about the limits, if there is room

@@ -446,7 +446,7 @@ def split_by_region(
 
     A censored invoice is one the legacy dunning job declined to retry: under ₹500, or on
     a netbanking mandate. The model has no training labels there, and ``docs/EVALUATION.md``
-    reports its calibration separately for that reason (ECE 0.0342 observed against 0.4420
+    reports its calibration separately for that reason (ECE 0.0324 observed against 0.4707
     censored). The same split is applied to the arms, because an advantage that exists only
     where the training data already was is a much weaker claim than one that survives into
     the region the data never covered — and arm C, which is the policy that did the

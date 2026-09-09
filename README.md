@@ -73,12 +73,12 @@ every arm, 10,000-resample paired bootstrap over subscriptions:
 | A | Never retry, always escalate | ₹0 | 0 | 0 | — |
 | B | Retry everything to the cap, any time | ₹6,39,598 | 210 | **66** | ₹3,045.70 |
 | C | Legacy fixed-offset dunning | ₹53,490 | 63 | **120** | ₹849.05 |
-| **D** | **Winback** | **₹6,39,626** | 197 | **0** | **₹3,246.83** |
+| **D** | **Winback** | **₹6,40,525** | 199 | **0** | **₹3,218.72** |
 
-**Against the naive baseline, Winback recovers ₹28 more — on ₹6.4 lakh, with a paired
-interval of [−₹2,697, ₹2,781] that contains zero.** The money is a tie, and it is
-reported as a tie. What is not a tie is the legality: **66 violations against 0**,
-interval [−96, −42], excluding zero. Same money, inside the law, on thirteen fewer
+**Against the naive baseline, Winback recovers ₹927 more — on ₹6.4 lakh, with a paired
+interval of [₹0, ₹2,781] that just touches zero.** The money is effectively a tie, and
+it is reported as one. What is not a tie is the legality: **66 violations against 0**,
+interval [−96, −42], excluding zero. Same money, inside the law, on eleven fewer
 attempts.
 
 Arm C is the interesting one. It recovers ₹5,57,737 in raw rupees — and only **₹53,490**
@@ -89,7 +89,7 @@ it today would believe it works.
 
 Complete through **Day 10 of 10** (26 Aug → 5 Sep 2026), tagged
 [**v1.0.2**](https://github.com/DisturbedSage5840C/winback/releases/tag/v1.0.2).
-**664 tests passing, 99% coverage on `compliance/`.**
+**665 tests passing, 99% coverage on `compliance/`.**
 
 | | |
 |---|---|
@@ -98,7 +98,7 @@ Complete through **Day 10 of 10** (26 Aug → 5 Sep 2026), tagged
 | ✅ | Six compliance rules + the composing guardrail — pure functions, written test-first |
 | ✅ | Live-lane spike — all 11 probes resolved, no unknowns carried forward ([findings](docs/LIVE_LANE_FINDINGS.md)) |
 | ✅ | World simulator + counterfactual oracle — dataset **frozen** at `c32b2b063cd87707`, 4,000 mandates / 33,866 attempts, realism gate 13 PASS / 6 ungraded / 0 FAIL ([data](docs/DATA.md)) |
-| ✅ | Calibrated model **v1 frozen** — sigmoid chosen out-of-fold, isotonic disqualified for asserting certainty; test ECE **0.034** where the merchant had data and **0.442** where it did not, and it still ranks correctly there ([evaluation](docs/EVALUATION.md)) |
+| ✅ | Calibrated model **v1 frozen** — sigmoid chosen out-of-fold, isotonic disqualified for asserting certainty; test ECE **0.032** where the merchant had data and **0.471** where it did not, and it still ranks correctly there ([evaluation](docs/EVALUATION.md)) |
 | ✅ | Four-arm paired counterfactual evaluation — 10,000-resample cluster bootstrap, design frozen before results existed |
 | ✅ | Agent orchestrator on the Claude Agent SDK — `can_use_tool` money gate, append-only audit hooks, Razorpay MCP mode switch, both execution adapters. Batch **190/190 unattended**; the live cohort carries real `plink_…` IDs |
 | ✅ | Dashboard — overview, worklist, drill-down, compliance panel, evaluation. No mocked data anywhere |
@@ -148,7 +148,7 @@ about why "it works on my machine" is not a test.
 
 ## 07 — What broke
 
-[`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) has **48 entries**, written as they happened
+[`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md) has **49 entries**, written as they happened
 rather than reconstructed at the end. Four worth reading, because they are the four
 kinds of mistake this project actually made:
 

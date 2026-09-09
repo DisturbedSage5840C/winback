@@ -264,7 +264,7 @@ Response shape: `{run, arms[], violations[], intervals[]}`.
    reconstructed — that is a feature, not an admission: it proves the dashboard and
    `docs/EVALUATION.md` show the identical evidence.
 5. **Honesty note** — a static, hand-written callout naming the simulator-circularity
-   limitation and the observed-vs-censored ECE finding (0.034 vs 0.442) verbatim from
+   limitation and the observed-vs-censored ECE finding (0.032 vs 0.471) verbatim from
    `docs/EVALUATION.md` §07/§08. This is not optional polish — the plan is explicit that
    naming your own limitation before a panelist does is worth more than hiding it.
 

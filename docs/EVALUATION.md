@@ -66,7 +66,7 @@ uncertainty about which 800 customers were in the cohort, not simulation noise.
 | A | Never retry, always escalate | ₹0 | ₹0 | 0 | 0 | 0 | 190 | 0 | 0 | — |
 | B | Retry everything to the cap, any time | ₹6,39,598 | ₹6,39,598 | 276 | 210 | 0 | 0 | 23 | 66 | ₹3,045.70 |
 | C | Legacy fixed-offset dunning | ₹5,57,737 | ₹53,490 | 183 | 63 | 0 | 0 | 71 | 120 | ₹849.05 |
-| **D** | Winback: calibrated model + cost policy + guardrail | ₹6,39,626 | **₹6,39,626** | 197 | **197** | 78 | 0 | 23 | **0** | **₹3,246.83** |
+| **D** | Winback: calibrated model + cost policy + guardrail | ₹6,40,525 | **₹6,40,525** | 199 | **199** | 74 | 0 | 22 | **0** | **₹3,218.72** |
 
 ### The paired comparison
 
@@ -77,9 +77,9 @@ overlapping marginal intervals would be wrong.
 
 | Comparison | Legally recovered | Legal attempts | Violations | ₹ per legal attempt | Excludes zero |
 |---|---:|---:|---:|---:|---|
-| **D − A** | ₹6,39,626 [₹4,68,398, ₹8,35,540] | 197 [166, 230] | 0 [0, 0] | — | legally recovered, legal attempts |
-| **D − B** | ₹28 [−₹2,697, ₹2,781] | −13 [−32, 5] | −66 [−96, −42] | ₹201.13 [−₹79, ₹501] | violations |
-| **D − C** | ₹5,86,136 [₹4,15,611, ₹7,82,898] | 134 [107, 163] | −120 [−152, −91] | ₹2,397.78 [₹1,629, ₹3,286] | legally recovered, legal attempts, violations, ₹ per legal attempt |
+| **D − A** | ₹6,40,525 [₹4,69,294, ₹8,36,881] | 199 [168, 232] | 0 [0, 0] | — | legally recovered, legal attempts |
+| **D − B** | ₹927 [₹0, ₹2,781] | −11 [−29, 7] | −66 [−96, −42] | ₹173.01 [−₹102, ₹455] | violations |
+| **D − C** | ₹5,87,035 [₹4,16,904, ₹7,83,534] | 136 [108, 166] | −120 [−152, −91] | ₹2,369.67 [₹1,619, ₹3,234] | legally recovered, legal attempts, violations, ₹ per legal attempt |
 
 ### What each arm's violations were, and what they bought it
 
@@ -100,11 +100,11 @@ the arms the same way asks whether the advantage survives outside the data.
 | **Observed** | 133 | A | ₹0 | 0 | 0 | — |
 |  |  | B | ₹5,59,114 | 151 | 39 | ₹3,702.74 |
 |  |  | C | ₹53,490 | 63 | 120 | ₹849.05 |
-|  |  | D | ₹5,59,142 | 140 | 0 | ₹3,993.87 |
+|  |  | D | ₹5,60,041 | 141 | 0 | ₹3,971.92 |
 | **Censored** | 57 | A | ₹0 | 0 | 0 | — |
 |  |  | B | ₹80,484 | 59 | 27 | ₹1,364.14 |
 |  |  | C | ₹0 | 0 | 0 | — |
-|  |  | D | ₹80,484 | 57 | 0 | ₹1,412 |
+|  |  | D | ₹80,484 | 58 | 0 | ₹1,387.66 |
 
 ## 06 — Sensitivity to the nudge assumption
 
@@ -116,11 +116,11 @@ it is how much the policy loses by being wrong about them.
 | World nudge multiplier | Arm | Nudges sent | Legally recovered | Legal attempts | ₹ / legal attempt |
 |---|---|---:|---:|---:|---:|
 | **1.00** (nudge does nothing) | B | 0 | ₹6,39,598 | 210 | ₹3,045.70 |
-|  | D | 78 | ₹6,39,438 | 199 | ₹3,213.26 |
+|  | D | 74 | ₹6,40,337 | 202 | ₹3,169.99 |
 | **0.62** | B | 0 | ₹6,39,598 | 210 | ₹3,045.70 |
-|  | D | 78 | ₹6,39,626 | 197 | ₹3,246.83 |
+|  | D | 74 | ₹6,40,525 | 199 | ₹3,218.72 |
 | **0.40** | B | 0 | ₹6,39,598 | 210 | ₹3,045.70 |
-|  | D | 78 | ₹6,40,525 | 196 | ₹3,267.98 |
+|  | D | 74 | ₹6,40,525 | 198 | ₹3,234.97 |
 
 <!-- END GENERATED -->
 
@@ -132,18 +132,19 @@ it is how much the policy loses by being wrong about them.
 
 **Against the naive baseline, this is a tie on money and a rout on legality.** Arm B
 retries everything to the cap at any hour. It recovers ₹6,39,598 that the law would have
-allowed; Winback recovers ₹6,39,626. The paired interval on that difference is
-[−₹2,697, ₹2,781] — it contains zero, comfortably, and it is meant to. The difference
-in legal attempts, −13, also contains zero. **Winback does not beat retry-everything on
-rupees, and this document will not claim it does.** What separates them is the third
-column: 66 violations against zero, interval [−96, −42]. The finding is that the naive
-policy's lawbreaking buys it nothing — it reaches the same money by a route a merchant
-cannot ship.
+allowed; Winback recovers ₹6,40,525. The paired interval on that difference is
+[₹0, ₹2,781] — it touches zero at its lower edge rather than sitting comfortably inside
+it, but the reading is the same: a gap this small is not distinguishable from noise. The
+difference in legal attempts, −11, also contains zero. **Winback does not beat
+retry-everything on rupees, and this document will not claim it does.** What separates
+them is the third column: 66 violations against zero, interval [−96, −42]. The finding
+is that the naive policy's lawbreaking buys it nothing — it reaches the same money by a
+route a merchant cannot ship.
 
 That is sharper than a lift number would have been, and it is the reason
 `eval/tests/test_bootstrap.py::test_the_money_claim_against_retry_everything_is_a_tie_and_must_stay_one`
-exists. It asserts the interval still spans zero. If a later change makes Winback look
-better on rupees, that test fails and someone has to decide deliberately whether the
+exists. It asserts the interval does not exclude zero. If a later change makes Winback
+look better on rupees, that test fails and someone has to decide deliberately whether the
 change is real or whether the harness has started flattering the submission.
 
 **The two baselines break the law in two different ways, and only measurement told them
@@ -164,7 +165,7 @@ than the other way round; `docs/WHAT_BROKE.md` records it.
 
 **The advantage survives where the model has no training data.** In the censored region —
 under ₹500 or on netbanking, where the legacy policy never retried and so never generated
-a label — arms B and D recover the identical ₹80,484, but D does it in 57 legal attempts
+a label — arms B and D recover the identical ₹80,484, but D does it in 58 legal attempts
 against 59, with zero violations against 27. Given §10's finding that the model is badly
 miscalibrated there and still ranks correctly, a policy that picks the best of several
 scored candidates rather than thresholding on a probability is exactly the design that
@@ -173,7 +174,7 @@ should survive that region. It did.
 **The nudge assumption barely matters, which is the useful version of that result.**
 Across a world where the nudge does nothing (multiplier 1.00) and one where it works far
 harder than assumed (0.40), with the policy's belief held wrong at 0.80 throughout,
-Winback's legally-recovered total moves by ₹1,087 — 0.17%. The nudge shifts which
+Winback's legally-recovered total moves by ₹188 — 0.03%. The nudge shifts which
 marginal invoices get presented, not how much is there to collect. This is the one
 parameter that cannot be measured without sending real messages, and the honest thing to
 report is not that the nudge works but that the result does not rest on it.
@@ -202,7 +203,7 @@ already been chosen on the calibration split.
 | | |
 |---|---|
 | Model | XGBoost binary classifier, `max_depth=5`, `learning_rate=0.05`, `min_child_weight=10`, `random_state=20260828` |
-| Early stopping | iteration **339** of 600, on a time-ordered inner split (22,005 fit / 3,884 inner validation) |
+| Early stopping | iteration **400** of 600, on a time-ordered inner split (22,005 fit / 3,884 inner validation) |
 | Rows | train 25,889 · calibrate 4,791 · test 2,400 · censored calibrate 118 · censored test 85 |
 | Base rate | 87.0% captured on test — which is why accuracy appears nowhere below |
 
@@ -212,16 +213,16 @@ spent, and which rail the mandate sits on.
 
 | Feature | Gain |
 |---|---|
-| `prior_root_cause_bd_hard` | 43.4% |
-| `attempt_number` | 19.3% |
-| `method_upi_autopay` | 8.2% |
-| `action_is_retry` | 4.9% |
-| `paid_count` | 4.1% |
-| `prior_root_cause_bd_transient` | 2.6% |
-| `bank_method_failure_rate` | 2.1% |
+| `prior_root_cause_bd_hard` | 45.5% |
+| `attempt_number` | 18.7% |
+| `method_upi_autopay` | 7.7% |
+| `action_is_retry` | 5.1% |
+| `paid_count` | 3.9% |
+| `prior_root_cause_bd_transient` | 2.3% |
 | `cycle_number` | 2.0% |
-| `mandate_age_days` | 1.9% |
-| everything else | < 1.5% each |
+| `bank_method_failure_rate` | 1.8% |
+| `mandate_age_days` | 1.8% |
+| everything else | < 1.2% each |
 
 `salary_day` is not in the table because it is not in the model. The simulator uses it
 to drive the balance hazard; a merchant cannot see it, so the feature builder never
@@ -236,15 +237,15 @@ scored on rows it did not see; the winner is then refit on the whole split.
 
 | Calibrator | ECE (out-of-fold) | ECE (in-sample) | Rows at exactly 0 or 1 | |
 |---|---|---|---|---|
-| uncalibrated | 0.0390 | — | — | the baseline to beat |
-| **sigmoid** | **0.0373** | 0.0372 | 0 | **chosen** |
-| temperature | 0.0430 | 0.0423 | 0 | |
-| isotonic | 0.0006 | 0.0000 | 913 | **disqualified** |
+| uncalibrated | 0.0396 | — | — | the baseline to beat |
+| **sigmoid** | **0.0362** | 0.0356 | 0 | **chosen** |
+| temperature | 0.0444 | 0.0440 | 0 | |
+| isotonic | 0.0034 | 0.0000 | 833 | **disqualified** |
 
-Isotonic posts an ECE sixty times lower than the winner and loses anyway. It is a step
+Isotonic posts an ECE ten times lower than the winner and loses anyway. It is a step
 function bounded by its outermost knots, so every score outside the range it was fitted
-on maps to exactly 0.0 or exactly 1.0 — which it does to 242 calibration rows at zero,
-560 at one, and **111 of the 118 censored calibration rows**, every one of them at
+on maps to exactly 0.0 or exactly 1.0 — which it does to 236 calibration rows at zero,
+493 at one, and **104 of the 118 censored calibration rows**, every one of them at
 zero. A probability of exactly zero is not a low probability; it is a claim no evidence
 can revise. The Day-5 policy ranks candidate actions by expected rupees, and an
 expected value of exactly zero can never be the argmax — so a calibrator that zeroes
@@ -265,9 +266,9 @@ they can memorise. Both columns are printed so a reader can see the distance.
 
 | Slice | n | ECE | MCE | Brier | PR-AUC (failure) | ROC-AUC |
 |---|---|---|---|---|---|---|
-| test, uncalibrated | 2,400 | 0.0775 | 0.6477 | 0.0694 | 0.6834 | 0.8197 |
-| **test, observed** | 2,400 | **0.0342** | 0.6549 | 0.0602 | 0.6834 | 0.8197 |
-| test, censored | 85 | **0.4420** | 0.7740 | 0.4103 | 0.8911 | 0.8643 |
+| test, uncalibrated | 2,400 | 0.0729 | 0.6205 | 0.0696 | 0.6813 | 0.8197 |
+| **test, observed** | 2,400 | **0.0324** | 0.6059 | 0.0603 | 0.6813 | 0.8197 |
+| test, censored | 85 | **0.4707** | 0.6831 | 0.3901 | 0.8868 | 0.8598 |
 
 Calibration halves the ECE and moves nothing else: sigmoid is monotone, so it cannot
 reorder predictions, and PR-AUC and ROC-AUC are rank statistics. That is the expected
@@ -282,10 +283,10 @@ At the **per-invoice break-even threshold** implied by the cost matrix — attem
 
 | | |
 |---|---|
-| Margin recovered | ₹19,752 |
-| Wasted attempt cost | ₹39 |
+| Margin recovered | ₹19,75,245 |
+| Wasted attempt cost | ₹3,900 |
 | Margin forgone | ₹0 |
-| Net | ₹19,713 |
+| Net | ₹19,71,345 |
 | Attempts declined on cost alone | **52 of 2,400** |
 
 Those thresholds land between 0.0010 and 0.3704, median **0.0425**. That is the
@@ -306,16 +307,16 @@ there. Scored against it:
 
 | | Observed slice | Censored slice |
 |---|---|---|
-| ECE | 0.0342 | **0.4420** |
-| Mean signed gap vs the oracle | −0.021 | **−0.452** |
-| Mean absolute gap | 0.095 | 0.500 |
-| ROC-AUC | 0.8197 | **0.8643** |
-| PR-AUC (failure) | 0.6834 | 0.8911 |
+| ECE | 0.0324 | **0.4707** |
+| Mean signed gap vs the oracle | −0.019 | **−0.434** |
+| Mean absolute gap | 0.096 | 0.486 |
+| ROC-AUC | 0.8197 | **0.8598** |
+| PR-AUC (failure) | 0.6813 | 0.8868 |
 
 **The model is badly miscalibrated off-distribution and still ranks correctly there.**
 Every censored prediction falls below 0.40 while 56% of those attempts capture; the
 model is not confused about which censored invoices are the good ones, it is uniformly
-too pessimistic about all of them. In the 0.1–0.2 bin it predicts 14% and observes 80%.
+too pessimistic about all of them. In the 0.1–0.2 bin it predicts 16% and observes 80%.
 
 This is a stronger result than uniform failure would have been, and it is the reason
 the policy layer is built the way it is. Miscalibrated-but-ordered means the *absolute*

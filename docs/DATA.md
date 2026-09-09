@@ -136,8 +136,8 @@ none of that combination. That is the harder version of the selection problem, n
 easier one: a merchant watching their recovery rate would see nothing wrong, because
 there is nothing wrong with the rate. What is wrong is that the model has no evidence
 about a corner of the space it will be asked to act in. Day 4 measured the consequence —
-ECE **0.4420** on the censored slice against **0.0342** on the observed one, uniformly
-pessimistic, and still correctly ordered. See `EVALUATION.md` §06.
+ECE **0.4707** on the censored slice against **0.0324** on the observed one, uniformly
+pessimistic, and still correctly ordered. See `EVALUATION.md` §10.
 
 ## 04 — Splits
 

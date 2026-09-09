@@ -47,6 +47,7 @@ from agent.adapters.base import (
 )
 from agent.adapters.simulated import SimulatedAdapter
 from compliance.guardrail import ActionKind, ActionRequest, GuardrailDecision, evaluate
+from compliance.npci_retry_cap import MAX_ATTEMPTS_PER_INVOICE
 from ml.features import BankMethodRates
 from ml.policy import DEFAULT_POLICY, InvoiceState, Plan, PolicyParams, decide
 from ml.scorer import Scorer
@@ -307,7 +308,7 @@ def build_tools(bench: Workbench) -> list[SdkMcpTool[Any]]:
                 "invoice_id": invoice_id,
                 "amount_paise": state.invoice.amount_paise,
                 "attempts_used": state.attempts_used,
-                "attempts_remaining": max(0, 4 - state.attempts_used),
+                "attempts_remaining": max(0, MAX_ATTEMPTS_PER_INVOICE - state.attempts_used),
                 "root_cause": str(state.root_cause),
                 "recommended": plan.chosen.to_dict(),
                 "candidates": [c.to_dict() for c in plan.candidates],

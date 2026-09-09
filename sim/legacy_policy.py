@@ -18,10 +18,10 @@ and most of even that is attempt-number mix. What differs is the covariates: the
 censored region is cheap, netbanking, and early in a mandate's life, and the observed
 data contains almost none of that combination. The model therefore has no evidence
 about a corner of the space it will be asked to act in — and Day 4 measured the price
-of that at ECE 0.4420 there against 0.0342 on the observed slice, uniformly pessimistic
+of that at ECE 0.4707 there against 0.0324 on the observed slice, uniformly pessimistic
 and still correctly ordered.
 
-That is the point. `docs/EVALUATION.md` §06 reports calibration on the observed and the
+That is the point. `docs/EVALUATION.md` §10 reports calibration on the observed and the
 censored slices separately, measured against the oracle, and the gap between them is
 a more honest credibility signal than any headline AUC. A model that has never been
 shown a case cannot be trusted on one, and saying so with a number is better than
@@ -47,6 +47,7 @@ from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 
 from compliance.non_peak_window import IST, is_non_peak
+from compliance.npci_retry_cap import MAX_ATTEMPTS_PER_INVOICE as MAX_ATTEMPTS
 from core.money import paise
 from sim.world import Mandate
 
@@ -55,10 +56,6 @@ from sim.world import Mandate
 #: censoring can be reported rather than inferred.
 BELOW_VALUE_FLOOR = "legacy_value_floor"
 UNSUPPORTED_RAIL = "legacy_rail_excluded"
-
-#: NPCI OC-215-A: one attempt plus three retries. Mirrored from
-#: ``payment_attempts.attempt_number CHECK (BETWEEN 1 AND 4)`` in db/01_schema.sql.
-MAX_ATTEMPTS = 4
 
 
 @dataclass(frozen=True, slots=True)

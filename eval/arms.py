@@ -29,6 +29,7 @@ from datetime import datetime, timedelta
 from typing import Protocol
 
 from compliance.guardrail import ActionKind
+from compliance.npci_retry_cap import MAX_ATTEMPTS_PER_INVOICE as MAX_ATTEMPTS
 from compliance.root_cause import RootCause
 from ml.features import BankMethodRates, PriorState
 from ml.policy import DEFAULT_POLICY, InvoiceState, Plan, PolicyParams, decide
@@ -36,9 +37,6 @@ from ml.scorer import Scorer
 from sim.generate import CustomerRow, InvoiceRow, SubscriptionRow
 from sim.legacy_policy import DEFAULT_LEGACY, LegacyParams, retry_schedule
 from sim.world import Mandate
-
-#: NPCI OC-215-A. Mirrored from ``compliance/npci_retry_cap.py``, which is the authority.
-MAX_ATTEMPTS = 4
 
 
 @dataclass(frozen=True, slots=True)

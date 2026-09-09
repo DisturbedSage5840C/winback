@@ -15,6 +15,7 @@ import pytest
 from ml.dataset import build_matrix, build_splits
 from ml.features import (
     FEATURE_NAMES,
+    HIGH_CEILING_MCC,
     NEVER_SUCCEEDED_DAYS,
     BankMethodRates,
     Candidate,
@@ -79,6 +80,26 @@ def test_the_candidate_carries_no_outcome() -> None:
         "censoring_reason",
     }
     assert forbidden.isdisjoint(Candidate.__slots__)
+
+
+def test_the_high_ceiling_categories_agree_with_the_simulator_and_the_rule() -> None:
+    """``HIGH_CEILING_MCC`` is imported from ``compliance.afa_threshold`` rather than
+    restated (see the module comment on it), which closes off the way this actually
+    broke: this file used to spell one category ``"credit_card"`` where the RBI-rule
+    module and the population generator both spell it ``"credit_card_bill"``, so
+    ``mcc_is_high_afa_ceiling`` was 0.0 for that entire slice with nothing to catch it —
+    the frozen-model golden fixture stores pre-built vectors, so it never re-derives
+    this constant either.
+
+    A single shared frozenset cannot drift from itself, but it can still drift from
+    ``sim/generate.py``'s ``MCC_MIX``, which is the actual source of truth for what MCC
+    category strings exist in the population. This asserts both directions: every
+    elevated-ceiling category is one the simulator actually generates, and the three
+    categories RBI grants the higher ceiling to are exactly the ones named here.
+    """
+    generated_categories = {row[0] for row in generate.MCC_MIX}
+    assert HIGH_CEILING_MCC <= generated_categories
+    assert HIGH_CEILING_MCC == {"insurance", "mutual_fund_sip", "credit_card_bill"}
 
 
 def test_the_payday_is_not_readable_from_the_features(

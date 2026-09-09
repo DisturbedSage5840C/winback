@@ -29,7 +29,7 @@
     "lifetime_failure_rate",
     "cycle_number"
   ],
-  "best_iteration": 339,
+  "best_iteration": 400,
   "train_rows": 22005,
   "inner_validation_rows": 3884,
   "params": {

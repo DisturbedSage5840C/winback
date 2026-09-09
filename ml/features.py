@@ -32,7 +32,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from math import cos, log1p, pi, sin
 
+from compliance.afa_threshold import ELEVATED_MCC_CATEGORIES
 from compliance.non_peak_window import IST, is_non_peak
+from compliance.npci_retry_cap import MAX_ATTEMPTS_PER_INVOICE
 from sim.generate import AttemptRow, CustomerRow, Dataset, InvoiceRow, SubscriptionRow
 
 #: Column order for the design matrix. Fixed and asserted against at build time — the
@@ -77,7 +79,14 @@ FEATURE_NAMES: tuple[str, ...] = (
 #: MCC categories RBI allows a ₹1,00,000 AFA ceiling rather than ₹15,000. The model does
 #: not enforce the rule — ``compliance/afa_threshold.py`` does — but the ceiling changes
 #: which invoices a merchant would historically have pursued, so it carries signal.
-HIGH_CEILING_MCC: frozenset[str] = frozenset({"insurance", "mutual_fund_sip", "credit_card"})
+#:
+#: Imported rather than restated. This used to be its own literal set here, spelled
+#: ``"credit_card"`` where ``compliance/afa_threshold.py`` and the population generator
+#: (``sim/generate.py``'s ``MCC_MIX``) both spell it ``"credit_card_bill"`` — so
+#: ``mcc_is_high_afa_ceiling`` was 0.0 for every credit-card-bill invoice in the dataset,
+#: roughly 6% of the population and its highest-value slice. A frozen literal cannot
+#: drift from itself; a second literal can, silently, and did.
+HIGH_CEILING_MCC: frozenset[str] = ELEVATED_MCC_CATEGORIES
 
 #: Stand-in for "no successful charge has ever been observed on this mandate". Chosen
 #: rather than NaN so the column has one meaning; trees split it off cleanly at the top.
@@ -244,7 +253,7 @@ def features_for(
         "mcc_is_high_afa_ceiling": float(subscription.mcc_category in HIGH_CEILING_MCC),
         "bank_method_failure_rate": rates.get(subscription.bank, subscription.method),
         "attempt_number": float(candidate.attempt_number),
-        "attempts_remaining": float(4 - candidate.attempt_number),
+        "attempts_remaining": float(MAX_ATTEMPTS_PER_INVOICE - candidate.attempt_number),
         "action_is_retry": float(candidate.action == "retry"),
         "prior_root_cause_td": float(prior.prior_root_cause == "TD"),
         "prior_root_cause_bd_transient": float(prior.prior_root_cause == "BD_transient"),

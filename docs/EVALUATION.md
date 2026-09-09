@@ -29,7 +29,7 @@ the naive baseline loses on grounds that were fixed before the experiment ran.
 | Arm | Policy | Role |
 |---|---|---|
 | A | Never retry, always escalate | Over-conservative floor |
-| B | Retry everything to the cap, any hour | Naive baseline — **and illegal** |
+| B | Retry everything to the cap, any hour | Naive baseline — breaks Winback's retry rule, not NPCI's window |
 | C | Legacy policy (fixed T+1/2/3 at 09:00, amount- and method-filtered) | What the merchant does today |
 | D | **Winback** — calibrated model + cost policy + guardrail | The submission |
 
@@ -130,7 +130,8 @@ it is how much the policy loses by being wrong about them.
 
 ![Four arms, one cohort](assets/four_arms.png)
 
-**Against the naive baseline, this is a tie on money and a rout on legality.** Arm B
+**Against the naive baseline, this is a tie on money and a rout on compliance
+violations.** Arm B
 retries everything to the cap at any hour. It recovers ₹6,39,598 that the law would have
 allowed; Winback recovers ₹6,40,525. The paired interval on that difference is
 [₹0, ₹2,781] — it touches zero at its lower edge rather than sitting comfortably inside
@@ -138,8 +139,8 @@ it, but the reading is the same: a gap this small is not distinguishable from no
 difference in legal attempts, −11, also contains zero. **Winback does not beat
 retry-everything on rupees, and this document will not claim it does.** What separates
 them is the third column: 66 violations against zero, interval [−96, −42]. The finding
-is that the naive policy's lawbreaking buys it nothing — it reaches the same money by a
-route a merchant cannot ship.
+is that the naive policy's rule-breaking buys it nothing — it reaches the same money by
+a route a merchant cannot ship.
 
 That is sharper than a lift number would have been, and it is the reason
 `eval/tests/test_bootstrap.py::test_the_money_claim_against_retry_everything_is_a_tie_and_must_stay_one`
@@ -147,15 +148,17 @@ exists. It asserts the interval does not exclude zero. If a later change makes W
 look better on rupees, that test fails and someone has to decide deliberately whether the
 change is real or whether the harness has started flattering the submission.
 
-**The two baselines break the law in two different ways, and only measurement told them
-apart.** Every one of arm B's 66 violations is `bd_hard_not_retryable`: it re-presents
-mandates the bank has permanently declined. Those 66 presentments recovered **₹0**. B
-spends legality and receives nothing for it. Arm C is the opposite: 81 of its 120
-violations are `peak_window` presentments, and those recovered **₹5,04,247 — 90% of
-everything arm C appears to collect.** Score arm C on rupees and it places second; score
-it on rupees it was *allowed* to collect and it places last of the three arms that
-present at all, at ₹53,490. An evaluation with only a money column would have ranked
-these two baselines in the wrong order.
+**The two baselines rack up violations for different reasons, and only one of them is
+actually the law.** Every one of arm B's 66 violations is `bd_hard_not_retryable` — a
+Winback-defined rule against re-presenting mandates the bank has permanently declined,
+not a clause of OC-215-A — and those 66 presentments recovered **₹0**. B spends
+attempts on dead mandates and receives nothing for it. Arm C is the one that actually
+breaks the circular: 81 of its 120 violations are `peak_window` presentments — NPCI's
+own rule — and those recovered **₹5,04,247 — 90% of everything arm C appears to
+collect.** Score arm C on rupees and it places second; score it on rupees it was
+*allowed* to collect and it places last of the three arms that present at all, at
+₹53,490. An evaluation with only a money column would have ranked these two baselines
+in the wrong order.
 
 Arm B commits no window violations at all. It was written expecting them to be its
 characteristic failure, and the data refused: this dataset's presentment hours are 01–09,
@@ -345,3 +348,16 @@ policy so the model must generalise past what it observed, and calibration is me
 on both slices — but a simulator is a model, not the world. Naming this before a
 panelist does is not modesty; it is the only reading of the evidence that survives
 contact with someone who has run a real dunning system.
+
+**Arm D's zero violations is not fully an empirical result either.** `ml/policy.py`'s
+`decide` chooses the highest-value action from a candidate set in which a denied action
+is scored `-inf`, and that can never win an argmax against write-off's guaranteed
+`0.0` — so Winback's violation count is bounded at zero by construction, not
+discovered by measurement. `eval/counterfactual.py` says as much in a code comment
+(`ScoredCandidate.violation`: *"Arm D cannot produce one because its candidate
+generator only ever returns approved actions"*), but §04's D − A row still reports it
+as a measured statistic with a bootstrap interval, `[0, 0]`. The interval is not wrong
+— the paired bootstrap runs the same code on every resample and gets the same zero
+every time, so it is a faithful description of what did happen — but read it as "the
+guardrail cannot be bypassed", the claim `agent/tests/test_gate.py` proves directly by
+construction, not as "the world never offered Winback a chance to violate."

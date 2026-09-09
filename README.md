@@ -38,15 +38,16 @@ deliberately.
 
 ## 02 — The thesis
 
-> A naive retry-everything policy recovers money by breaking NPCI's cap. Winback
-> recovers comparable money while consuming **fewer legal attempts** and committing
-> **zero violations** — and proves it with a paired counterfactual evaluation on a
-> held-out cohort.
+> A naive retry-everything policy recovers comparable money, but it spends real
+> compliance violations to get there — re-presenting mandates the bank has already
+> permanently declined. Winback recovers the same money while consuming **fewer legal
+> attempts** and committing **zero violations** — and proves it with a paired
+> counterfactual evaluation on a held-out cohort.
 
 The headline metric is therefore not rupees recovered. It is **rupees recovered per
 legal attempt consumed**, reported next to a compliance-violations-by-arm count. A
-policy that wins on raw recovery by burning an illegal fifth attempt has not won
-anything a merchant can ship.
+policy that wins on raw recovery by spending attempts on mandates that were never going
+to clear has not won anything a merchant can ship.
 
 ## 03 — What is and is not an LLM decision
 
@@ -77,9 +78,15 @@ every arm, 10,000-resample paired bootstrap over subscriptions:
 
 **Against the naive baseline, Winback recovers ₹927 more — on ₹6.4 lakh, with a paired
 interval of [₹0, ₹2,781] that just touches zero.** The money is effectively a tie, and
-it is reported as one. What is not a tie is the legality: **66 violations against 0**,
-interval [−96, −42], excluding zero. Same money, inside the law, on eleven fewer
-attempts.
+it is reported as one. What is not a tie is what the attempts are spent on: **66
+violations against 0**, interval [−96, −42], excluding zero. All 66 are
+`bd_hard_not_retryable` — re-presentments of mandates the bank has already permanently
+declined, none of them NPCI's cap or its peak-hour window; this dataset's presentment
+hours never land inside a peak one, so the naive baseline never gets the chance to break
+that rule either ([`EVALUATION.md`](docs/EVALUATION.md) §07). The rule broken is
+Winback's own retry-eligibility check, not the circular's, and it is still real: every
+one of those 66 attempts recovered ₹0, spent against a mandate that could never have
+cleared. Same money, none of it spent on dead mandates, on eleven fewer attempts.
 
 Arm C is the interesting one. It recovers ₹5,57,737 in raw rupees — and only **₹53,490**
 of that legally, because 81 of its retries land inside a peak window. A merchant running

@@ -1,5 +1,15 @@
 """Replaying every arm against the same coin flips.
 
+**Read "counterfactual" the way this file uses it, not the way IPS, doubly-robust, or a
+direct-method estimator would.** There is no observational log to correct for, no
+propensity score, and no policy whose logged behaviour differs from the one being
+scored — this is deterministic simulation replay against the generating oracle
+(``sim.world.resolve``), run once per arm on oracle seeds shared across arms. It answers
+"what would this policy have done to this invoice", which is exact here because
+``sim.world`` is the thing that generated the invoice in the first place. It is not an
+estimate of what a policy never run would have done against data logged under a
+different one, and the module name should not be read as a claim that it is.
+
 Each closed test-cohort invoice whose original charge failed is rewound to the moment
 that failure became known, and each of the four arms is then given the invoice and left
 to work it to a conclusion. The legacy retries that actually happened are discarded for

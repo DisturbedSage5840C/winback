@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -44,15 +46,31 @@ from compliance.guardrail import ActionKind, ActionRequest
 from compliance.result import RuleResult
 from compliance.root_cause import RootCause
 from core.config import REPO_ROOT, get_settings
-from core.db import healthcheck, read_connection
+from core.db import close_pools, healthcheck, read_connection
 
 IST = ZoneInfo("Asia/Kolkata")
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Nothing to do on startup; on shutdown, let Postgres see a clean disconnect.
+
+    ``core.db``'s pools live for the process, not the request, so nothing else in
+    this file closes them. Uvicorn's own process teardown would drop the sockets
+    either way; this just makes the shutdown one this process chose rather than one
+    the OS did to it.
+    """
+    yield
+    close_pools()
+
 
 app = FastAPI(
     title="Winback API",
     version="1.0",
     summary="Read-only access to the recovery batch, its audit trail, and the evaluation.",
+    lifespan=_lifespan,
 )
+
 
 # The dashboard is served from a different origin in both development and production.
 # Credentials are never sent — there is no auth on a read-only view of a test-mode

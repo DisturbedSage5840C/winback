@@ -60,7 +60,7 @@ from agent.tools import (
     winback_server,
 )
 from core.config import get_settings
-from core.db import read_connection
+from core.db import close_pools, read_connection
 from eval.counterfactual import DECISION_LAG_HOURS
 from ml.dataset import BankMethodRates
 from ml.scorer import load_scorer
@@ -683,7 +683,14 @@ def main() -> int:
     if args.live:
         os.environ["WINBACK_EXECUTION_MODE"] = "live"
 
-    report = asyncio.run(run_batch(limit=args.limit, run_id=args.run_id, cohort=args.cohort))
+    try:
+        report = asyncio.run(run_batch(limit=args.limit, run_id=args.run_id, cohort=args.cohort))
+    finally:
+        # This process is the only caller `core.db`'s pools were ever going to outlive.
+        # Closing them here — not inside `run_batch`, which tests and future callers may
+        # invoke more than once per process — lets Postgres see a normal disconnect
+        # instead of however many simultaneous resets an exiting CLI process produces.
+        close_pools()
     print(f"\n{report}")
 
     # What was asked for, checked against what the report says happened — by a different

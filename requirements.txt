@@ -18,7 +18,7 @@ anthropic==0.75.0
 
 # --- persistence ---
 psycopg[binary]==3.2.12
-SQLAlchemy==2.0.44
+psycopg-pool==3.3.1
 
 # --- api ---
 fastapi==0.141.1

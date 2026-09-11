@@ -11,7 +11,7 @@ mistake you only make once:
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -35,7 +35,9 @@ class Settings:
     db_url_owner: str
 
     razorpay_key_id: str | None
-    razorpay_key_secret: str | None
+    # `repr=False` so a stray `print(settings)` or an uncaught-exception traceback that
+    # renders a local variable can never put a live secret in a log line.
+    razorpay_key_secret: str | None = field(repr=False)
     mcp_mode: McpMode
     mcp_toolsets: str
     mcp_read_only: bool
@@ -95,6 +97,31 @@ def _one_of(name: str, default: str, allowed: set[str]) -> str:
     return value
 
 
+def _required_db_url(name: str, local_default: str) -> str:
+    """A DSN that must never silently become ``""``.
+
+    ``psycopg.connect("")`` does not fail — it falls through to libpq's own
+    defaults (``PGHOST``, the local Unix socket, the OS user), so an empty DSN
+    connects to *something*, just not the something the caller asked for. Render's
+    ``sync: false`` (see ``render.yaml``) produces exactly this: the env var is
+    declared and *present*, only unfilled, so it reads back as ``""`` rather than
+    absent — the one case ``_env``'s own default argument cannot catch, because the
+    variable is set. Fail here instead of handing ``""`` to psycopg and letting the
+    connection fail somewhere far from this line, against the wrong database, with
+    an error that says nothing about a missing env var.
+    """
+    value = _env(name)
+    if value:
+        return value
+    if value == "":
+        raise ConfigError(
+            f"{name} is set but empty. Render's `sync: false` leaves declared-but-"
+            f"unfilled vars this way — fill it in the dashboard, or unset it "
+            f"entirely to use the local default ({local_default!r})."
+        )
+    return local_default
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     load_dotenv(REPO_ROOT / ".env")
@@ -115,16 +142,14 @@ def get_settings() -> Settings:
 
     return Settings(
         db_url=_env("WINBACK_DB_URL", default_db) or default_db,
-        db_url_readonly=_env(
+        db_url_readonly=_required_db_url(
             "WINBACK_DB_URL_READONLY",
             "postgresql://winback_reader:winback_reader_dev@localhost:55432/winback",
-        )
-        or "",
-        db_url_owner=_env(
+        ),
+        db_url_owner=_required_db_url(
             "WINBACK_DB_URL_OWNER",
             "postgresql://winback_owner:winback_dev@localhost:55432/winback",
-        )
-        or "",
+        ),
         razorpay_key_id=key_id,
         razorpay_key_secret=_env("RAZORPAY_KEY_SECRET") or None,
         mcp_mode=mcp_mode,  # type: ignore[arg-type]

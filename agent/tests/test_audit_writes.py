@@ -250,6 +250,12 @@ async def test_a_recovered_outcome_moves_the_invoice_off_the_worklist(writer, to
     invoice_id = sorted(bench.cases)[0]
     at = await _plan_for(tools, bench, invoice_id)
 
+    # Every ``bench.cases`` invoice is picked by ``eval.counterfactual.build_cases``
+    # precisely because its seeded ``status`` is already closed (`recovered` or
+    # `written_off`) -- that is the historical outcome the evaluation replays against.
+    # The transition this test is pinning only fires from `at_risk`, so it has to put
+    # the row there itself rather than assume the seed already left it that way.
+    conn.execute("UPDATE invoices SET status = 'at_risk' WHERE invoice_id = %s", (invoice_id,))
     before = conn.execute(
         "SELECT status FROM invoices WHERE invoice_id = %s", (invoice_id,)
     ).fetchone()
@@ -279,6 +285,9 @@ async def test_a_write_off_moves_the_invoice_to_written_off(writer, bench, conn)
     since building a real all-candidates-refused plan is what that method's own caller
     is for."""
     invoice_id = sorted(bench.cases)[0]
+    # See test_a_recovered_outcome_moves_the_invoice_off_the_worklist: the seed leaves
+    # every ``bench.cases`` invoice already closed, not `at_risk`.
+    conn.execute("UPDATE invoices SET status = 'at_risk' WHERE invoice_id = %s", (invoice_id,))
     writer.record_action(
         {"invoice_id": invoice_id, "action": "write_off", "execution_mode": "simulated"},
         trigger="batch_scan",
@@ -296,6 +305,10 @@ async def test_a_denied_action_leaves_the_invoice_at_risk(writer, bench, conn):
     later slot may be legal -- only ``recovered`` and ``write_off`` may move
     ``invoices.status`` off ``at_risk``."""
     invoice_id = sorted(bench.cases)[0]
+    # See test_a_recovered_outcome_moves_the_invoice_off_the_worklist: the seed leaves
+    # every ``bench.cases`` invoice already closed, not `at_risk` -- so without this,
+    # the assertion below would fail on the seed state regardless of what the denial did.
+    conn.execute("UPDATE invoices SET status = 'at_risk' WHERE invoice_id = %s", (invoice_id,))
     writer.record_denial(
         MONEY_TOOL, {"invoice_id": invoice_id}, "no_guardrail_approval: nothing on record"
     )

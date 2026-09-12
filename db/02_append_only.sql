@@ -84,6 +84,13 @@ CREATE OR REPLACE FUNCTION winback_reset_world()
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
+-- Without this, SECURITY DEFINER resolves every unqualified name (the tables below,
+-- the DISABLE/ENABLE TRIGGER targets) against the CALLER's search_path, not a fixed
+-- one -- a caller who can create objects in a schema ahead of `public` on their own
+-- path can shadow one of these names and have it executed with the function owner's
+-- privileges. EXECUTE is revoked from PUBLIC (03_grants.sql) as the primary defence;
+-- this closes the hole for whichever role does still hold EXECUTE.
+SET search_path = public, pg_temp
 AS $$
 BEGIN
     RAISE WARNING 'winback_reset_world: dropping all facts and rebuilding the world';

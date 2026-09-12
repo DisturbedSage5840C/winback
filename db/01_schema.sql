@@ -206,8 +206,12 @@ CREATE TABLE payment_attempts (
 CREATE INDEX ON payment_attempts (invoice_id);
 CREATE INDEX ON payment_attempts (subscription_id);
 CREATE INDEX ON payment_attempts (run_id, arm);
--- The training-set index: observational history only.
-CREATE INDEX ON payment_attempts (observed) WHERE run_id IS NULL;
+-- The training-set index: observational history only. Indexed on invoice_id, not on
+-- `observed` itself -- a boolean column has at most two distinct values, so an index
+-- keyed on it has near-zero selectivity. What every caller of this partial index
+-- actually looks up is "this invoice's observed history rows", so invoice_id is the
+-- key and `observed` stays in the partial predicate alongside run_id IS NULL.
+CREATE INDEX ON payment_attempts (invoice_id) WHERE run_id IS NULL AND observed;
 
 -- ---------------------------------------------------------------- decisions
 -- One row per agent decision, written BEFORE the action executes.
@@ -258,6 +262,13 @@ CREATE TABLE decisions (
 CREATE INDEX ON decisions (run_id, arm);
 CREATE INDEX ON decisions (invoice_id);
 CREATE INDEX ON decisions (guardrail_verdict);
+-- /config reads the most recent decision across the whole table (no run_id filter) to
+-- report which model_version is currently live; without this it full-scans decisions
+-- on every dashboard load.
+CREATE INDEX ON decisions (decided_at DESC);
+-- /invoices/{id}/explain and /invoices/{id} both look up "the latest decision for this
+-- invoice" -- the (invoice_id) index above still forces a sort over every matching row.
+CREATE INDEX ON decisions (invoice_id, decided_at DESC);
 
 -- ---------------------------------------------------------------- audit_log
 -- The compliance artifact AND the dashboard drill-down source. Append-only.
@@ -308,7 +319,16 @@ CREATE TABLE audit_log (
     -- downstream of it, so this column is FALSE by construction for every row the
     -- agent can produce -- it is a canary for the gate having been bypassed, not a
     -- measurement of the agent choosing to comply.
-    compliance_violation   BOOLEAN NOT NULL DEFAULT FALSE
+    compliance_violation   BOOLEAN NOT NULL DEFAULT FALSE,
+
+    CHECK (recovered_amount_paise >= 0),
+    -- The headline rupee figure has no business being nonzero on a row that wasn't
+    -- a recovery -- a bug that set it on a 'failed'/'deferred'/NULL-outcome row would
+    -- inflate every sum this column feeds without ever tripping a >= 0 check.
+    -- coalesce(..., FALSE): outcome is nullable, and a bare `outcome = 'recovered'`
+    -- evaluates to NULL (not FALSE) when outcome is NULL, which a CHECK treats as
+    -- satisfied -- silently letting a NULL-outcome row carry a nonzero amount through.
+    CHECK (coalesce(outcome = 'recovered', FALSE) OR recovered_amount_paise = 0)
 );
 
 CREATE INDEX ON audit_log (run_id, arm);
@@ -316,6 +336,9 @@ CREATE INDEX ON audit_log (subject_type, subject_id);
 CREATE INDEX ON audit_log (decision_id);
 CREATE INDEX ON audit_log (compliance_violation) WHERE compliance_violation;
 CREATE INDEX ON audit_log (ts_utc DESC);
+-- The worklist's `total` and `rows` queries both filter on (run_id, outcome) via the
+-- latest-per-subject CTE; (run_id, arm) above doesn't help a query that never touches arm.
+CREATE INDEX ON audit_log (run_id, outcome);
 
 -- ---------------------------------------------------------------- evaluation
 CREATE TABLE eval_runs (
@@ -341,6 +364,8 @@ CREATE TABLE eval_runs (
 
     notes               TEXT
 );
+
+CREATE INDEX ON eval_runs (created_at DESC);
 
 CREATE TABLE eval_arm_results (
     run_id                    TEXT NOT NULL REFERENCES eval_runs(run_id),

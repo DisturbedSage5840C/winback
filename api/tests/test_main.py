@@ -191,6 +191,61 @@ def test_the_worklist_is_ordered_by_rupees_at_risk(client: TestClient, a_run: st
     assert amounts == sorted(amounts, reverse=True)
 
 
+def test_the_worklist_total_matches_the_outcome_filter(client: TestClient, a_run: str):
+    """``total`` must count the same rows ``rows`` is drawn from. It used to count every
+    invoice in the run regardless of ``outcome``, so ``?outcome=X`` returned a ``rows``
+    list filtered to one outcome against a ``total`` counting all of them -- a paginator
+    built on ``total`` walked off the end of the actually-filtered rows into empty pages."""
+    unfiltered = client.get(f"/runs/{a_run}/worklist", params={"limit": 500}).json()
+    if not unfiltered["rows"]:
+        pytest.skip("this run touched no at-risk invoice still in the worklist")
+
+    outcome = unfiltered["rows"][0]["outcome"]
+    filtered = client.get(
+        f"/runs/{a_run}/worklist", params={"limit": 500, "outcome": outcome}
+    ).json()
+    assert filtered["rows"]
+    assert all(row["outcome"] == outcome for row in filtered["rows"])
+    assert filtered["total"] == len(filtered["rows"])
+    if any(row["outcome"] != outcome for row in unfiltered["rows"]):
+        assert filtered["total"] < unfiltered["total"]
+
+
+def test_the_worklist_pagination_is_stable_across_pages(client: TestClient, a_run: str):
+    """``ORDER BY amount_paise DESC`` alone is not a total order -- repeated tier prices
+    make rows duplicate or vanish across pages. The ``invoice_id`` tiebreaker makes the
+    ordering total, so paging through recovers the same sequence an unpaginated read does."""
+    full = client.get(f"/runs/{a_run}/worklist", params={"limit": 500}).json()
+    if len(full["rows"]) < 4:
+        pytest.skip("need at least a few worklist rows to exercise pagination")
+
+    page_size = len(full["rows"]) // 2
+    page1 = client.get(f"/runs/{a_run}/worklist", params={"limit": page_size, "offset": 0}).json()
+    page2 = client.get(
+        f"/runs/{a_run}/worklist", params={"limit": page_size, "offset": page_size}
+    ).json()
+    combined_ids = [r["invoice_id"] for r in page1["rows"]] + [
+        r["invoice_id"] for r in page2["rows"]
+    ]
+    expected_ids = [r["invoice_id"] for r in full["rows"][: 2 * page_size]]
+    assert combined_ids == expected_ids
+
+
+def test_the_live_queue_pagination_is_stable_across_pages(client: TestClient):
+    full = client.get("/worklist", params={"limit": 500}).json()
+    if len(full["rows"]) < 4:
+        pytest.skip("need at least a few live-queue rows to exercise pagination")
+
+    page_size = len(full["rows"]) // 2
+    page1 = client.get("/worklist", params={"limit": page_size, "offset": 0}).json()
+    page2 = client.get("/worklist", params={"limit": page_size, "offset": page_size}).json()
+    combined_ids = [r["invoice_id"] for r in page1["rows"]] + [
+        r["invoice_id"] for r in page2["rows"]
+    ]
+    expected_ids = [r["invoice_id"] for r in full["rows"][: 2 * page_size]]
+    assert combined_ids == expected_ids
+
+
 def test_the_drill_down_returns_the_losing_candidates_too(client: TestClient, a_run: str):
     """The winner alone makes the drill-down a claim. ``candidate_set`` holds every scored
     ``action x slot`` pair including the refused ones and the reason each was refused,

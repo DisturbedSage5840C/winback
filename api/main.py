@@ -20,8 +20,10 @@ is a rounding error waiting for a total.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -260,17 +262,27 @@ def worklist(
           FROM exception_worklist w
           JOIN latest d USING (invoice_id)
          WHERE (%(outcome)s::text IS NULL OR d.outcome = %(outcome)s)
-         ORDER BY w.amount_paise DESC
+         ORDER BY w.amount_paise DESC, w.invoice_id
          LIMIT %(limit)s OFFSET %(offset)s
         """,
         {"run": run_id, "limit": limit, "offset": offset, "outcome": outcome},
     )
+    # Must mirror the `rows` query's WHERE exactly -- this used to count every invoice
+    # in the run regardless of `outcome`, so `?outcome=recovered` returned a `total` that
+    # counted all outcomes against a `rows` list filtered to one, and a paginator built
+    # on `total` walked off the end of the filtered list into empty pages.
     total = _row(
         """
-        SELECT count(DISTINCT subject_id) AS n FROM audit_log
-         WHERE run_id = %(run)s AND subject_type = 'invoice'
+        WITH latest AS (
+            SELECT DISTINCT ON (subject_id) subject_id, outcome
+              FROM audit_log
+             WHERE run_id = %(run)s AND subject_type = 'invoice'
+             ORDER BY subject_id, ts_utc DESC
+        )
+        SELECT count(*) AS n FROM latest
+         WHERE (%(outcome)s::text IS NULL OR outcome = %(outcome)s)
         """,
-        {"run": run_id},
+        {"run": run_id, "outcome": outcome},
     )
     return {"run_id": run_id, "total": (total or {}).get("n", 0), "rows": rows}
 
@@ -351,7 +363,7 @@ def live_worklist(
            AND (%(bank)s::text IS NULL OR bank = %(bank)s)
            AND (%(method)s::text IS NULL OR method = %(method)s)
            AND (%(root_cause)s::text IS NULL OR latest_root_cause = %(root_cause)s)
-         ORDER BY amount_paise DESC
+         ORDER BY amount_paise DESC, invoice_id
          LIMIT %(limit)s OFFSET %(offset)s
         """,
         params,
@@ -439,10 +451,26 @@ def invoice(invoice_id: str, run_id: str | None = None) -> dict[str, Any]:
 
 #: Keyed by decision_id, which is immutable once written — a decision row is never
 #: updated, only superseded by a new one (see ``decisions.supersedes_decision_id``), so a
-#: cached paragraph for one can never go stale under it. Process-local and unbounded by
-#: design: at most one entry per decision this deployment's dashboard has actually been
-#: asked to explain, which is a small fraction of the invoices in any batch.
-_EXPLANATION_CACHE: dict[str, str] = {}
+#: cached paragraph for one can never go stale under it. Bounded FIFO rather than
+#: unbounded: this endpoint has no auth and decision_id is enumerable, so nothing stops a
+#: caller from walking every decision an installation has ever written.
+_EXPLANATION_CACHE: OrderedDict[str, str] = OrderedDict()
+_EXPLANATION_CACHE_MAX = 2000
+
+#: One ``asyncio.Lock`` per decision_id, so N concurrent requests for the *same*
+#: decision wait for the first call instead of each spending a real Claude call, while
+#: requests for *different* decisions never block each other. Entries are never removed:
+#: deleting a lock while a waiter might still be queued on it lets a fresh request create
+#: a second lock for the same key and defeat the dedup, and the dict can never outgrow
+#: ``explainer_call_budget`` distinct decisions anyway, so the leak is bounded by the
+#: same number that already bounds real spend.
+_EXPLANATION_LOCKS: dict[str, asyncio.Lock] = {}
+
+#: Total Claude calls this process has made for `/explain`. The per-decision cache above
+#: only stops a *repeated* ask for the same decision — an enumerated walk across many
+#: distinct invoices still pays once each, on an endpoint with no auth. This is the
+#: actual ceiling on that spend, in the same spirit as `Settings.live_call_budget`.
+_explainer_calls_made = 0
 
 
 @app.get("/invoices/{invoice_id}/explain")
@@ -454,7 +482,8 @@ async def invoice_explanation(invoice_id: str, run_id: str | None = None) -> dic
     rows nobody looks at. The call underneath (:mod:`agent.explain`) has zero tools: it
     cannot approve, deny, or spend anything, only narrate a row already written.
     """
-    decided = _row(
+    decided = await asyncio.to_thread(
+        _row,
         """
         SELECT decision_id FROM decisions
          WHERE invoice_id = %(inv)s AND (%(run)s::text IS NULL OR run_id = %(run)s)
@@ -466,15 +495,36 @@ async def invoice_explanation(invoice_id: str, run_id: str | None = None) -> dic
         raise HTTPException(status_code=404, detail=f"no decision written yet for {invoice_id!r}")
 
     decision_id = decided["decision_id"]
-    if decision_id not in _EXPLANATION_CACHE:
-        try:
-            _EXPLANATION_CACHE[decision_id] = await explain_decision(invoice_id, run_id)
-        except DecisionNotFound as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except TimeoutError as exc:
-            raise HTTPException(status_code=504, detail="explainer timed out") from exc
-        except ClaudeSDKError as exc:
-            raise HTTPException(status_code=502, detail="explainer unavailable") from exc
+    if decision_id in _EXPLANATION_CACHE:
+        return {
+            "invoice_id": invoice_id,
+            "decision_id": decision_id,
+            "explanation": _EXPLANATION_CACHE[decision_id],
+        }
+
+    global _explainer_calls_made
+    lock = _EXPLANATION_LOCKS.setdefault(decision_id, asyncio.Lock())
+    async with lock:
+        # Re-check inside the lock: a concurrent request for this same decision may have
+        # already filled the cache while this one was waiting to acquire it.
+        if decision_id not in _EXPLANATION_CACHE:
+            if _explainer_calls_made >= get_settings().explainer_call_budget:
+                raise HTTPException(
+                    status_code=429,
+                    detail="explainer call budget exhausted for this deployment",
+                )
+            try:
+                explanation = await explain_decision(invoice_id, run_id)
+            except DecisionNotFound as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            except TimeoutError as exc:
+                raise HTTPException(status_code=504, detail="explainer timed out") from exc
+            except ClaudeSDKError as exc:
+                raise HTTPException(status_code=502, detail="explainer unavailable") from exc
+            _explainer_calls_made += 1
+            _EXPLANATION_CACHE[decision_id] = explanation
+            if len(_EXPLANATION_CACHE) > _EXPLANATION_CACHE_MAX:
+                _EXPLANATION_CACHE.popitem(last=False)
 
     return {
         "invoice_id": invoice_id,

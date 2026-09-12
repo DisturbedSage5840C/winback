@@ -50,6 +50,7 @@ class Settings:
     max_turns_per_item: int
     agent_timeout_seconds: int
     explainer_timeout_seconds: int
+    explainer_call_budget: int
 
     seed: int
 
@@ -169,5 +170,12 @@ def get_settings() -> Settings:
         # request thread outright, since that call sits inline in an HTTP handler.
         agent_timeout_seconds=_env_int("WINBACK_AGENT_TIMEOUT_SECONDS", 240),
         explainer_timeout_seconds=_env_int("WINBACK_EXPLAINER_TIMEOUT_SECONDS", 60),
+        # `/invoices/{id}/explain` is unauthenticated and its cache keys on decision_id,
+        # which is enumerable -- nothing before this stopped a caller from walking every
+        # invoice in a run and spending one real Claude call per distinct decision. Same
+        # shape as `live_call_budget` above: a hard per-process ceiling on real spend,
+        # not a correctness knob. Once hit, the endpoint refuses with 429 rather than
+        # keep paying, until the next deploy restarts the process and the count resets.
+        explainer_call_budget=_env_int("WINBACK_EXPLAINER_CALL_BUDGET", 500),
         seed=_env_int("WINBACK_SEED", 20260905),
     )

@@ -91,7 +91,10 @@ async def explain_decision(invoice_id: str, run_id: str | None = None) -> str:
     inline in an HTTP request (``api/main.py``'s ``/invoices/{id}/explain``), so an
     unbounded wait here is an unbounded request, not just a slow batch item.
     """
-    record = _decision_record(invoice_id, run_id)
+    # `_decision_record` is a plain synchronous psycopg call; run off the event loop so
+    # this coroutine's DB round trip does not stall every other request `api/main.py` is
+    # serving concurrently, the way it would if called directly from an `async def`.
+    record = await asyncio.to_thread(_decision_record, invoice_id, run_id)
     if record is None:
         raise DecisionNotFound(invoice_id)
 
